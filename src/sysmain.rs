@@ -8,9 +8,8 @@ const ERROR_SERVICE_ALREADY_RUNNING: u32 = 1056;
 
 pub struct PrefetchInfo {
     pub pf_count: usize,
-    pub oldest_date: Option<String>,
-    pub newest_date: Option<String>,
-    pub days_since_last: Option<String>,
+    pub oldest_time: Option<std::time::SystemTime>,
+    pub newest_time: Option<std::time::SystemTime>,
 }
 
 pub fn get_prefetch_folder() -> Result<PathBuf> {
@@ -26,90 +25,45 @@ pub fn get_prefetch_info() -> Result<PrefetchInfo> {
     if !prefetch_path.exists() {
         return Ok(PrefetchInfo {
             pf_count: 0,
-            oldest_date: None,
-            newest_date: None,
-            days_since_last: None,
+            oldest_time: None,
+            newest_time: None,
         });
     }
 
-    let entries: Vec<_> = match std::fs::read_dir(&prefetch_path) {
-        Ok(entries) => entries.filter_map(|e| e.ok()).collect(),
-        Err(_) => {
-            return Ok(PrefetchInfo {
-                pf_count: 0,
-                oldest_date: None,
-                newest_date: None,
-                days_since_last: None,
-            })
+    let entries: Vec<_> = std::fs::read_dir(&prefetch_path)
+        .map(|dir| dir.filter_map(|e| e.ok()).collect())
+        .unwrap_or_else(|_| Vec::new());
+
+    let mut pf_count = 0;
+    let mut dates = Vec::new();
+
+    for entry in entries {
+        if let Some(ext) = entry.path().extension() {
+            if ext.eq_ignore_ascii_case("pf") {
+                pf_count += 1;
+                if let Ok(metadata) = entry.metadata() {
+                    if let Ok(modified) = metadata.modified() {
+                        dates.push(modified);
+                    }
+                }
+            }
         }
-    };
-
-    let pf_count = entries
-        .iter()
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("pf"))
-                .unwrap_or(false)
-        })
-        .count();
-
-    let mut dates: Vec<std::time::SystemTime> = entries
-        .iter()
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("pf"))
-                .unwrap_or(false)
-        })
-        .filter_map(|e| e.metadata().ok())
-        .filter_map(|m| m.modified().ok())
-        .collect();
+    }
 
     if dates.is_empty() {
         return Ok(PrefetchInfo {
             pf_count,
-            oldest_date: None,
-            newest_date: None,
-            days_since_last: None,
+            oldest_time: None,
+            newest_time: None,
         });
     }
 
     dates.sort();
 
-    let format_time = |time: std::time::SystemTime| -> String {
-        let datetime: chrono::DateTime<chrono::Local> = time.into();
-        datetime.format("%d.%m.%Y %H:%M").to_string()
-    };
-
-    let oldest_date = dates.first().map(|t| format_time(*t));
-    let newest_date = dates.last().map(|t| format_time(*t));
-
-    let days_since_last = if let Some(&newest_time) = dates.last() {
-        let now = std::time::SystemTime::now();
-        if let Ok(duration) = now.duration_since(newest_time) {
-            let days = duration.as_secs() / 86400;
-            if days == 0 {
-                Some("сегодня".to_string())
-            } else if days == 1 {
-                Some("1 день назад".to_string())
-            } else {
-                Some(format!("{} дн. назад", days))
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
     Ok(PrefetchInfo {
         pf_count,
-        oldest_date,
-        newest_date,
-        days_since_last,
+        oldest_time: dates.first().copied(),
+        newest_time: dates.last().copied(),
     })
 }
 
@@ -122,17 +76,6 @@ pub enum ServiceStatus {
     NotFound,
 }
 
-impl ServiceStatus {
-    pub fn as_str(&self) -> &str {
-        match self {
-            ServiceStatus::Running => "Запущена",
-            ServiceStatus::Stopped => "Остановлена",
-            ServiceStatus::Paused => "Приостановлена",
-            ServiceStatus::Unknown => "Неизвестно",
-            ServiceStatus::NotFound => "Служба не найдена",
-        }
-    }
-}
 pub fn get_sysmain_status() -> Result<ServiceStatus> {
     unsafe {
         let scm = OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_CONNECT)

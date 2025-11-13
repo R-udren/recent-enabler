@@ -5,9 +5,8 @@ use windows::Win32::System::Registry::*;
 
 pub struct RecentInfo {
     pub lnk_count: usize,
-    pub oldest_date: Option<String>,
-    pub newest_date: Option<String>,
-    pub days_since_last: Option<String>,
+    pub oldest_time: Option<std::time::SystemTime>,
+    pub newest_time: Option<std::time::SystemTime>,
 }
 
 pub fn get_recent_folder() -> Result<PathBuf> {
@@ -24,9 +23,8 @@ pub fn get_recent_info() -> Result<RecentInfo> {
     if !recent_path.exists() {
         return Ok(RecentInfo {
             lnk_count: 0,
-            oldest_date: None,
-            newest_date: None,
-            days_since_last: None,
+            oldest_time: None,
+            newest_time: None,
         });
     }
 
@@ -62,45 +60,17 @@ pub fn get_recent_info() -> Result<RecentInfo> {
     if dates.is_empty() {
         return Ok(RecentInfo {
             lnk_count,
-            oldest_date: None,
-            newest_date: None,
-            days_since_last: None,
+            oldest_time: None,
+            newest_time: None,
         });
     }
 
     dates.sort();
 
-    let format_time = |time: std::time::SystemTime| -> String {
-        let datetime: chrono::DateTime<chrono::Local> = time.into();
-        datetime.format("%d.%m.%Y %H:%M").to_string()
-    };
-
-    let oldest_date = dates.first().map(|t| format_time(*t));
-    let newest_date = dates.last().map(|t| format_time(*t));
-
-    let days_since_last = if let Some(&newest_time) = dates.last() {
-        let now = std::time::SystemTime::now();
-        if let Ok(duration) = now.duration_since(newest_time) {
-            let days = duration.as_secs() / 86400;
-            if days == 0 {
-                Some("сегодня".to_string())
-            } else if days == 1 {
-                Some("1 день назад".to_string())
-            } else {
-                Some(format!("{} дн. назад", days))
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
     Ok(RecentInfo {
         lnk_count,
-        oldest_date,
-        newest_date,
-        days_since_last,
+        oldest_time: dates.first().copied(),
+        newest_time: dates.last().copied(),
     })
 }
 pub fn is_recent_disabled() -> Result<bool> {
@@ -145,21 +115,6 @@ pub fn is_recent_disabled() -> Result<bool> {
             Ok(true) // Если значение не найдено, считаем что отключено
         }
     }
-}
-
-pub fn is_recent_folder_empty() -> Result<bool> {
-    let recent_path = get_recent_folder()?;
-
-    if !recent_path.exists() {
-        return Ok(true);
-    }
-
-    let entries = std::fs::read_dir(&recent_path)
-        .context("Не удалось прочитать папку Recent")?
-        .filter_map(|e| e.ok())
-        .count();
-
-    Ok(entries == 0)
 }
 
 pub fn enable_recent() -> Result<()> {

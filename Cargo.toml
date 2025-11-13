@@ -21,8 +21,9 @@ features = [
 ]
 
 [profile.release]
-opt-level = "z"
 lto = true
 codegen-units = 1
-strip = true
+opt-level = "z"
+debug = false
 panic = "abort"
+strip = "symbols"
