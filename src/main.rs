@@ -590,18 +590,17 @@ async fn check_recent_async() -> Result<RecentStatus, String> {
     let path = recent::get_recent_folder().map_err(|e| e.to_string())?;
     let is_disabled = recent::is_recent_disabled().map_err(|e| e.to_string())?;
     let is_empty = recent::is_recent_folder_empty().map_err(|e| e.to_string())?;
-    let files_count = recent::get_recent_files_count().map_err(|e| e.to_string())?;
-    let (oldest_file, newest_file) = recent::get_recent_file_dates().unwrap_or((None, None));
-    let days_since_last = recent::get_days_since_last_recent().unwrap_or(None);
+
+    let info = recent::get_recent_info().map_err(|e| e.to_string())?;
 
     Ok(RecentStatus {
         path: path.display().to_string(),
         is_disabled,
         is_empty,
-        files_count,
-        oldest_file,
-        newest_file,
-        days_since_last,
+        files_count: info.lnk_count,
+        oldest_file: info.oldest_date,
+        newest_file: info.newest_date,
+        days_since_last: info.days_since_last,
     })
 }
 
