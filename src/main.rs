@@ -8,16 +8,26 @@ use iced::{Element, Fill, Task, Theme};
 fn main() -> iced::Result {
     iced::application("Recent & SysMain Manager", update, view)
         .theme(|_| Theme::Dark)
-        .run_with(|| (State::new(), Task::none()))
+        .window(iced::window::Settings {
+            size: iced::Size::new(700.0, 650.0),
+            ..Default::default()
+        })
+        .run_with(|| {
+            (
+                State::new(),
+                Task::batch(vec![
+                    Task::perform(check_recent_async(), Message::RecentChecked),
+                    Task::perform(check_sysmain_async(), Message::SysMainChecked),
+                ]),
+            )
+        })
 }
 
 #[derive(Debug, Clone)]
 enum Message {
-    CheckRecent,
-    CheckSysMain,
     EnableRecent,
     EnableSysMain,
-    RefreshAll,
+    Refresh,
     RecentChecked(Result<RecentStatus, String>),
     SysMainChecked(Result<SysMainStatus, String>),
     RecentEnabled(Result<String, String>),
@@ -25,6 +35,7 @@ enum Message {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct RecentStatus {
     path: String,
     is_disabled: bool,
@@ -34,6 +45,7 @@ struct RecentStatus {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SysMainStatus {
     service_status: String,
     startup_type: String,
@@ -41,6 +53,8 @@ struct SysMainStatus {
     is_auto: bool,
     prefetch_path: String,
     prefetch_count: usize,
+    oldest_file: Option<String>,
+    newest_file: Option<String>,
 }
 
 #[derive(Default)]
@@ -62,22 +76,20 @@ impl State {
 
 fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
-        Message::CheckRecent => Task::perform(check_recent_async(), Message::RecentChecked),
-        Message::CheckSysMain => Task::perform(check_sysmain_async(), Message::SysMainChecked),
-        Message::EnableRecent => Task::perform(enable_recent_async(), Message::RecentEnabled),
-        Message::EnableSysMain => Task::perform(enable_sysmain_async(), Message::SysMainEnabled),
-        Message::RefreshAll => Task::batch(vec![
+        Message::Refresh => Task::batch(vec![
             Task::perform(check_recent_async(), Message::RecentChecked),
             Task::perform(check_sysmain_async(), Message::SysMainChecked),
         ]),
+        Message::EnableRecent => Task::perform(enable_recent_async(), Message::RecentEnabled),
+        Message::EnableSysMain => Task::perform(enable_sysmain_async(), Message::SysMainEnabled),
         Message::RecentChecked(result) => {
             match result {
                 Ok(status) => {
                     state.recent_status = Some(status);
-                    state.status_message = "✅ Статус Recent обновлен".to_string();
+                    state.status_message = String::new();
                 }
                 Err(e) => {
-                    state.status_message = format!("❌ Ошибка: {}", e);
+                    state.status_message = format!("Ошибка Recent: {}", e);
                 }
             }
             Task::none()
@@ -86,10 +98,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             match result {
                 Ok(status) => {
                     state.sysmain_status = Some(status);
-                    state.status_message = "✅ Статус SysMain обновлен".to_string();
+                    state.status_message = String::new();
                 }
                 Err(e) => {
-                    state.status_message = format!("❌ Ошибка: {}", e);
+                    state.status_message = format!("Ошибка SysMain: {}", e);
                 }
             }
             Task::none()
@@ -100,7 +112,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Task::perform(check_recent_async(), Message::RecentChecked)
             }
             Err(e) => {
-                state.status_message = format!("❌ Ошибка: {}", e);
+                state.status_message = format!("Ошибка: {}", e);
                 Task::none()
             }
         },
@@ -110,7 +122,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Task::perform(check_sysmain_async(), Message::SysMainChecked)
             }
             Err(e) => {
-                state.status_message = format!("❌ Ошибка: {}", e);
+                state.status_message = format!("Ошибка: {}", e);
                 Task::none()
             }
         },
@@ -118,101 +130,175 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 }
 
 fn view(state: &State) -> Element<'_, Message> {
-    let title = text("Recent & SysMain Manager").size(32);
+    let header = row![
+        text("Recent & SysMain Manager").size(24).width(Fill),
+        button("Обновить").on_press(Message::Refresh).padding(10),
+    ]
+    .spacing(10)
+    .padding(15)
+    .align_y(iced::Alignment::Center);
 
-    let admin_status = if state.is_admin {
-        text("✅ Запущено с правами администратора")
+    let admin_badge = container(
+        text(if state.is_admin {
+            "Администратор"
+        } else {
+            "Без прав администратора"
+        })
+        .size(14),
+    )
+    .padding(8)
+    .style(container::rounded_box);
+
+    let recent_card = if let Some(status) = &state.recent_status {
+        let status_text = if status.is_disabled {
+            "ОТКЛЮЧЕНА"
+        } else {
+            "ВКЛЮЧЕНА"
+        };
+
+        let enable_button = if status.is_disabled {
+            Some(
+                container(button("Включить запись Recent").on_press(Message::EnableRecent))
+                    .center_x(Fill)
+                    .padding(10),
+            )
+        } else {
+            None
+        };
+
+        let mut card_content = column![
+            text("RECENT (Недавние файлы)").size(18).width(Fill),
+            Space::with_height(10),
+            row![
+                text("Статус записи:").width(150),
+                text(status_text).size(16),
+            ]
+            .spacing(10),
+            row![
+                text("Файлов в папке:").width(150),
+                text(format!("{} ({})", status.files_count, status.folder_size)),
+            ]
+            .spacing(10),
+            row![text("Путь:").width(150), text(&status.path).size(12),].spacing(10),
+        ]
+        .spacing(8)
+        .padding(15);
+
+        if let Some(btn) = enable_button {
+            card_content = card_content.push(Space::with_height(10)).push(btn);
+        }
+
+        container(card_content).style(container::rounded_box)
     } else {
-        text("⚠️ Запущено без прав администратора")
+        container(text("Загрузка статуса Recent...").size(16).width(Fill))
+            .padding(20)
+            .style(container::rounded_box)
     };
 
-    let buttons = row![
-        button("🔄 Обновить все").on_press(Message::RefreshAll),
-        Space::with_width(10),
-        button("📁 Проверить Recent").on_press(Message::CheckRecent),
-        Space::with_width(10),
-        button("⚙️ Проверить SysMain").on_press(Message::CheckSysMain),
-    ]
-    .padding(10)
-    .spacing(10);
+    let sysmain_card = if let Some(status) = &state.sysmain_status {
+        let service_text = if status.is_running {
+            "ЗАПУЩЕНА"
+        } else {
+            "ОСТАНОВЛЕНА"
+        };
 
-    let action_buttons = row![
-        button("✅ Включить Recent").on_press(Message::EnableRecent),
-        Space::with_width(10),
-        button("✅ Включить SysMain").on_press(Message::EnableSysMain),
-    ]
-    .padding(10)
-    .spacing(10);
+        let enable_button = if !status.is_running || !status.is_auto {
+            Some(
+                container(button("Включить службу SysMain").on_press(Message::EnableSysMain))
+                    .center_x(Fill)
+                    .padding(10),
+            )
+        } else {
+            None
+        };
 
-    let status_text = text(&state.status_message).size(16);
+        let mut card_content = column![
+            text("SYSMAIN (SuperFetch)").size(18).width(Fill),
+            Space::with_height(10),
+            row![text("Служба:").width(150), text(service_text).size(16),].spacing(10),
+            row![text("Тип запуска:").width(150), text(&status.startup_type),].spacing(10),
+            row![
+                text("Prefetch:").width(150),
+                text(format!("{} файлов (.pf)", status.prefetch_count)),
+            ]
+            .spacing(10),
+        ]
+        .spacing(8)
+        .padding(15);
+
+        if let Some(oldest) = &status.oldest_file {
+            card_content = card_content
+                .push(row![text("Самый старый:").width(150), text(oldest).size(12),].spacing(10));
+        }
+
+        if let Some(newest) = &status.newest_file {
+            card_content = card_content
+                .push(row![text("Самый новый:").width(150), text(newest).size(12),].spacing(10));
+        }
+
+        card_content = card_content.push(
+            row![
+                text("Путь:").width(150),
+                text(&status.prefetch_path).size(12),
+            ]
+            .spacing(10),
+        );
+
+        if let Some(btn) = enable_button {
+            card_content = card_content.push(Space::with_height(10)).push(btn);
+        }
+
+        container(card_content).style(container::rounded_box)
+    } else {
+        container(text("Загрузка статуса SysMain...").size(16).width(Fill))
+            .padding(20)
+            .style(container::rounded_box)
+    };
+
+    let status_msg = if !state.status_message.is_empty() {
+        Some(
+            container(text(&state.status_message).size(14))
+                .padding(10)
+                .style(container::rounded_box),
+        )
+    } else {
+        None
+    };
+
+    let hint = if !state.is_admin {
+        Some(
+            container(
+                text("Подсказка: Для полного доступа запустите с правами администратора").size(12),
+            )
+            .padding(10)
+            .style(container::rounded_box),
+        )
+    } else {
+        None
+    };
 
     let mut content = column![
-        title,
-        admin_status,
-        Space::with_height(20),
-        buttons,
-        action_buttons,
-        Space::with_height(10),
-        status_text
+        header,
+        admin_badge,
+        Space::with_height(15),
+        recent_card,
+        Space::with_height(15),
+        sysmain_card,
     ]
-    .padding(20)
-    .spacing(10);
+    .spacing(5)
+    .padding(15);
 
-    if let Some(status) = &state.recent_status {
-        let recent_section = column![
-            text("📁 Статус Recent").size(24),
-            text(format!("Путь: {}", status.path)),
-            text(format!(
-                "Запись: {}",
-                if status.is_disabled {
-                    "❌ Отключена"
-                } else {
-                    "✅ Включена"
-                }
-            )),
-            text(format!(
-                "Папка: {}",
-                if status.is_empty {
-                    "⚠️ Пустая"
-                } else {
-                    "✅ Содержит файлы"
-                }
-            )),
-            text(format!("Количество файлов: {}", status.files_count)),
-            text(format!("Размер папки: {}", status.folder_size)),
-        ]
-        .spacing(5)
-        .padding(10);
-
-        content = content.push(Space::with_height(20)).push(recent_section);
+    if let Some(msg) = status_msg {
+        content = content.push(Space::with_height(10)).push(msg);
     }
 
-    if let Some(status) = &state.sysmain_status {
-        let sysmain_section = column![
-            text("⚙️ Статус SysMain").size(24),
-            text(format!(
-                "Статус службы: {} {}",
-                if status.is_running { "✅" } else { "❌" },
-                status.service_status
-            )),
-            text(format!(
-                "Тип запуска: {} {}",
-                if status.is_auto { "✅" } else { "⚠️" },
-                status.startup_type
-            )),
-            text(format!("Папка Prefetch: {}", status.prefetch_path)),
-            text(format!("Файлов .pf: {}", status.prefetch_count)),
-        ]
-        .spacing(5)
-        .padding(10);
-
-        content = content.push(Space::with_height(20)).push(sysmain_section);
+    if let Some(h) = hint {
+        content = content.push(Space::with_height(10)).push(h);
     }
 
     container(scrollable(content))
         .width(Fill)
         .height(Fill)
-        .padding(20)
         .into()
 }
 
@@ -237,6 +323,7 @@ async fn check_sysmain_async() -> Result<SysMainStatus, String> {
     let startup_type = sysmain::get_sysmain_startup_type().map_err(|e| e.to_string())?;
     let prefetch_path = sysmain::get_prefetch_folder().map_err(|e| e.to_string())?;
     let prefetch_count = sysmain::get_prefetch_files_count().unwrap_or(0);
+    let (oldest_file, newest_file) = sysmain::get_prefetch_file_dates().unwrap_or((None, None));
 
     let is_running = service_status == sysmain::ServiceStatus::Running;
     let is_auto = startup_type == sysmain::StartupType::Automatic;
@@ -248,6 +335,8 @@ async fn check_sysmain_async() -> Result<SysMainStatus, String> {
         is_auto,
         prefetch_path: prefetch_path.display().to_string(),
         prefetch_count,
+        oldest_file,
+        newest_file,
     })
 }
 
@@ -255,16 +344,16 @@ async fn enable_recent_async() -> Result<String, String> {
     let is_disabled = recent::is_recent_disabled().map_err(|e| e.to_string())?;
 
     if !is_disabled {
-        return Ok("ℹ️ Запись в Recent уже включена!".to_string());
+        return Ok("Запись в Recent уже включена!".to_string());
     }
 
     recent::enable_recent().map_err(|e| e.to_string())?;
-    Ok("✅ Запись в Recent успешно включена!".to_string())
+    Ok("Запись в Recent успешно включена!".to_string())
 }
 
 async fn enable_sysmain_async() -> Result<String, String> {
     if !utils::is_admin() {
-        return Err("❌ Требуются права администратора для включения службы SysMain!".to_string());
+        return Err("Требуются права администратора для включения службы SysMain!".to_string());
     }
 
     let service_status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
@@ -273,9 +362,9 @@ async fn enable_sysmain_async() -> Result<String, String> {
     if service_status == sysmain::ServiceStatus::Running
         && startup_type == sysmain::StartupType::Automatic
     {
-        return Ok("ℹ️ Служба SysMain уже включена и запущена!".to_string());
+        return Ok("Служба SysMain уже включена и запущена!".to_string());
     }
 
     sysmain::enable_sysmain().map_err(|e| e.to_string())?;
-    Ok("✅ Служба SysMain успешно включена и запущена!".to_string())
+    Ok("Служба SysMain успешно включена и запущена!".to_string())
 }

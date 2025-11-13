@@ -18,19 +18,64 @@ pub fn get_prefetch_files_count() -> Result<usize> {
         return Ok(0);
     }
 
-    let count = std::fs::read_dir(&prefetch_path)
-        .context("Не удалось прочитать папку Prefetch")?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("pf"))
-                .unwrap_or(false)
-        })
-        .count();
+    match std::fs::read_dir(&prefetch_path) {
+        Ok(entries) => {
+            let count = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("pf"))
+                        .unwrap_or(false)
+                })
+                .count();
+            Ok(count)
+        }
+        Err(_) => Ok(0),
+    }
+}
 
-    Ok(count)
+pub fn get_prefetch_file_dates() -> Result<(Option<String>, Option<String>)> {
+    let prefetch_path = get_prefetch_folder()?;
+
+    if !prefetch_path.exists() {
+        return Ok((None, None));
+    }
+
+    match std::fs::read_dir(&prefetch_path) {
+        Ok(entries) => {
+            let mut dates: Vec<std::time::SystemTime> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("pf"))
+                        .unwrap_or(false)
+                })
+                .filter_map(|e| e.metadata().ok())
+                .filter_map(|m| m.modified().ok())
+                .collect();
+
+            if dates.is_empty() {
+                return Ok((None, None));
+            }
+
+            dates.sort();
+
+            let format_time = |time: std::time::SystemTime| -> String {
+                let datetime: chrono::DateTime<chrono::Local> = time.into();
+                datetime.format("%d.%m.%Y %H:%M").to_string()
+            };
+
+            let oldest = dates.first().map(|t| format_time(*t));
+            let newest = dates.last().map(|t| format_time(*t));
+
+            Ok((oldest, newest))
+        }
+        Err(_) => Ok((None, None)),
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServiceStatus {
