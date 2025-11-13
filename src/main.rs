@@ -36,6 +36,7 @@ enum Message {
     SysMainEnabled(Result<String, String>),
     OpenRecentFolder,
     OpenPrefetchFolder,
+    RestartAsAdmin,
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +150,21 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 let _ = std::process::Command::new("explorer")
                     .arg(&status.prefetch_path)
                     .spawn();
+            }
+            Task::none()
+        }
+        Message::RestartAsAdmin => {
+            if let Ok(exe_path) = std::env::current_exe() {
+                let _ = std::process::Command::new("powershell")
+                    .args([
+                        "-Command",
+                        &format!(
+                            "Start-Process -FilePath '{}' -Verb RunAs",
+                            exe_path.display()
+                        ),
+                    ])
+                    .spawn();
+                std::process::exit(0);
             }
             Task::none()
         }
@@ -462,41 +478,49 @@ fn view(state: &State) -> Element<'_, Message> {
                     .center_x(Fill),
                 );
             } else {
-                let disabled_btn = button("Включить службу Prefetch").padding(10).style(
-                    |_theme: &iced::Theme, _status| button::Style {
-                        background: Some(iced::Background::Color(iced::Color::from_rgb(
-                            0.3, 0.3, 0.3,
-                        ))),
-                        text_color: iced::Color::from_rgb(0.5, 0.5, 0.5),
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                );
-
-                let button_with_tooltip = iced::widget::tooltip(
-                    disabled_btn,
-                    "Требуются права администратора",
-                    iced::widget::tooltip::Position::Top,
+                let warning_msg = container(
+                    row![
+                        text("Требуются права администратора").size(13).width(Fill),
+                        button("Перезапустить")
+                            .on_press(Message::RestartAsAdmin)
+                            .padding([5, 10])
+                            .style(|_theme, status| {
+                                let base_color = match status {
+                                    button::Status::Active => iced::Color::from_rgb(0.4, 0.3, 0.2),
+                                    button::Status::Hovered => iced::Color::from_rgb(0.5, 0.4, 0.3),
+                                    button::Status::Pressed => {
+                                        iced::Color::from_rgb(0.35, 0.25, 0.15)
+                                    }
+                                    _ => iced::Color::from_rgb(0.4, 0.3, 0.2),
+                                };
+                                button::Style {
+                                    background: Some(iced::Background::Color(base_color)),
+                                    text_color: iced::Color::WHITE,
+                                    border: iced::Border {
+                                        radius: 6.0.into(),
+                                        ..Default::default()
+                                    },
+                                    ..Default::default()
+                                }
+                            }),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center),
                 )
-                .style(|_theme: &iced::Theme| container::Style {
+                .padding(10)
+                .style(|_theme| container::Style {
                     background: Some(iced::Background::Color(iced::Color::from_rgb(
-                        0.1, 0.1, 0.1,
+                        0.25, 0.2, 0.15,
                     ))),
-                    text_color: Some(iced::Color::WHITE),
                     border: iced::Border {
-                        color: iced::Color::from_rgb(0.5, 0.5, 0.5),
+                        color: iced::Color::from_rgb(0.6, 0.5, 0.3),
                         width: 1.0,
-                        radius: 4.0.into(),
+                        radius: 6.0.into(),
                     },
                     ..Default::default()
                 });
 
-                card_content = card_content
-                    .push(Space::with_height(15))
-                    .push(container(button_with_tooltip).center_x(Fill));
+                card_content = card_content.push(Space::with_height(15)).push(warning_msg);
             }
         }
 
@@ -540,11 +564,32 @@ fn view(state: &State) -> Element<'_, Message> {
     let hint = if !state.is_admin {
         Some(
             container(
-                row![text(
-                    "Для полного доступа к функциям запустите программу с правами администратора"
-                )
-                .size(13)
-                .width(Fill),]
+                row![
+                    text("Для полного доступа к функциям запустите программу с правами администратора")
+                        .size(13)
+                        .width(Fill),
+                    button("Перезапустить")
+                        .on_press(Message::RestartAsAdmin)
+                        .padding([6, 12])
+                        .style(|_theme, status| {
+                            let base_color = match status {
+                                button::Status::Active => iced::Color::from_rgb(0.4, 0.3, 0.2),
+                                button::Status::Hovered => iced::Color::from_rgb(0.5, 0.4, 0.3),
+                                button::Status::Pressed => iced::Color::from_rgb(0.35, 0.25, 0.15),
+                                _ => iced::Color::from_rgb(0.4, 0.3, 0.2),
+                            };
+                            button::Style {
+                                background: Some(iced::Background::Color(base_color)),
+                                text_color: iced::Color::WHITE,
+                                border: iced::Border {
+                                    radius: 6.0.into(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            }
+                        }),
+                ]
+                .spacing(10)
                 .align_y(iced::Alignment::Center),
             )
             .padding(12)
@@ -608,9 +653,8 @@ async fn check_sysmain_async() -> Result<SysMainStatus, String> {
     let service_status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
     let startup_type = sysmain::get_sysmain_startup_type().map_err(|e| e.to_string())?;
     let prefetch_path = sysmain::get_prefetch_folder().map_err(|e| e.to_string())?;
-    let prefetch_count = sysmain::get_prefetch_files_count().unwrap_or(0);
-    let (oldest_file, newest_file) = sysmain::get_prefetch_file_dates().unwrap_or((None, None));
-    let days_since_last = sysmain::get_days_since_last_prefetch().unwrap_or(None);
+
+    let info = sysmain::get_prefetch_info().map_err(|e| e.to_string())?;
 
     let is_running = service_status == sysmain::ServiceStatus::Running;
     let is_auto = startup_type == sysmain::StartupType::Automatic;
@@ -621,10 +665,10 @@ async fn check_sysmain_async() -> Result<SysMainStatus, String> {
         is_running,
         is_auto,
         prefetch_path: prefetch_path.display().to_string(),
-        prefetch_count,
-        oldest_file,
-        newest_file,
-        days_since_last,
+        prefetch_count: info.pf_count,
+        oldest_file: info.oldest_date,
+        newest_file: info.newest_date,
+        days_since_last: info.days_since_last,
     })
 }
 
