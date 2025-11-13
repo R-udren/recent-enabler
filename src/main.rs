@@ -32,6 +32,8 @@ enum Message {
     SysMainChecked(Result<SysMainStatus, String>),
     RecentEnabled(Result<String, String>),
     SysMainEnabled(Result<String, String>),
+    OpenRecentFolder,
+    OpenPrefetchFolder,
 }
 
 #[derive(Debug, Clone)]
@@ -130,13 +132,53 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 Task::none()
             }
         },
+        Message::OpenRecentFolder => {
+            if let Some(status) = &state.recent_status {
+                let _ = std::process::Command::new("explorer")
+                    .arg(&status.path)
+                    .spawn();
+            }
+            Task::none()
+        }
+        Message::OpenPrefetchFolder => {
+            if let Some(status) = &state.sysmain_status {
+                let _ = std::process::Command::new("explorer")
+                    .arg(&status.prefetch_path)
+                    .spawn();
+            }
+            Task::none()
+        }
     }
 }
 
 fn view(state: &State) -> Element<'_, Message> {
     let header = row![
-        text("Recent & Prefetch Manager").size(24).width(Fill),
-        button("Обновить").on_press(Message::Refresh).padding(10),
+        text("Recent & Prefetch Manager")
+            .size(26)
+            .width(Fill)
+            .style(|_theme| text::Style {
+                color: Some(iced::Color::from_rgb(0.9, 0.9, 1.0))
+            }),
+        button("Обновить")
+            .on_press(Message::Refresh)
+            .padding([8, 16])
+            .style(|_theme, status| {
+                let base_color = match status {
+                    button::Status::Active => iced::Color::from_rgb(0.2, 0.3, 0.4),
+                    button::Status::Hovered => iced::Color::from_rgb(0.3, 0.4, 0.5),
+                    button::Status::Pressed => iced::Color::from_rgb(0.15, 0.25, 0.35),
+                    _ => iced::Color::from_rgb(0.2, 0.3, 0.4),
+                };
+                button::Style {
+                    background: Some(iced::Background::Color(base_color)),
+                    text_color: iced::Color::WHITE,
+                    border: iced::Border {
+                        radius: 6.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            }),
     ]
     .spacing(10)
     .padding(15)
@@ -148,10 +190,26 @@ fn view(state: &State) -> Element<'_, Message> {
         } else {
             "Без прав администратора"
         })
-        .size(14),
+        .size(13),
     )
-    .padding(8)
-    .style(container::rounded_box);
+    .padding([6, 12])
+    .style(|_theme| container::Style {
+        background: Some(iced::Background::Color(if state.is_admin {
+            iced::Color::from_rgb(0.15, 0.3, 0.15)
+        } else {
+            iced::Color::from_rgb(0.3, 0.2, 0.15)
+        })),
+        border: iced::Border {
+            color: if state.is_admin {
+                iced::Color::from_rgb(0.3, 0.6, 0.3)
+            } else {
+                iced::Color::from_rgb(0.6, 0.4, 0.3)
+            },
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        ..Default::default()
+    });
 
     let recent_card = if let Some(status) = &state.recent_status {
         let status_text = if status.is_disabled {
@@ -160,68 +218,105 @@ fn view(state: &State) -> Element<'_, Message> {
             "ВКЛЮЧЕНА"
         };
 
-        let enable_button = if status.is_disabled {
-            Some(
-                container(button("Включить запись Recent").on_press(Message::EnableRecent))
-                    .center_x(Fill)
-                    .padding(10),
-            )
-        } else {
-            None
-        };
-
         let mut card_content = column![
-            text("RECENT (Недавние файлы)").size(18).width(Fill),
-            Space::with_height(10),
             row![
-                text("Статус записи:").width(150),
-                text(status_text).size(16),
+                text("RECENT (Недавние файлы)").size(20),
+                Space::with_width(Fill),
+                button("Открыть папку")
+                    .on_press(Message::OpenRecentFolder)
+                    .padding([5, 10]),
+            ]
+            .align_y(iced::Alignment::Center),
+            Space::with_height(15),
+            row![
+                text("Статус:").width(140).style(|_theme| text::Style {
+                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                }),
+                text(status_text).size(15).style(|_theme| text::Style {
+                    color: Some(if status.is_disabled {
+                        iced::Color::from_rgb(1.0, 0.4, 0.4)
+                    } else {
+                        iced::Color::from_rgb(0.4, 1.0, 0.4)
+                    })
+                }),
+            ]
+            .spacing(10),
+            row![
+                text("Файлов:").width(140).style(|_theme| text::Style {
+                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                }),
+                text(format!("{} ({})", status.files_count, status.folder_size)),
             ]
             .spacing(10),
         ]
         .spacing(8)
-        .padding(15);
-
-        // Отображение количества с днями в скобках
-        if let Some(days) = &status.days_since_last {
-            card_content = card_content.push(
-                row![
-                    text("Файлов в папке:").width(150),
-                    text(format!(
-                        "{} ({}) [{}]",
-                        status.files_count, status.folder_size, days
-                    )),
-                ]
-                .spacing(10),
-            );
-        } else {
-            card_content = card_content.push(
-                row![
-                    text("Файлов в папке:").width(150),
-                    text(format!("{} ({})", status.files_count, status.folder_size)),
-                ]
-                .spacing(10),
-            );
-        }
+        .padding(20);
 
         if let Some(oldest) = &status.oldest_file {
-            card_content = card_content
-                .push(row![text("Самый старый:").width(150), text(oldest).size(12),].spacing(10));
+            card_content = card_content.push(
+                row![
+                    text("Самый старый:")
+                        .width(140)
+                        .style(|_theme| text::Style {
+                            color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                        }),
+                    text(oldest).size(13),
+                ]
+                .spacing(10),
+            );
         }
 
         if let Some(newest) = &status.newest_file {
-            card_content = card_content
-                .push(row![text("Самый новый:").width(150), text(newest).size(12),].spacing(10));
+            let newest_display = if let Some(days) = &status.days_since_last {
+                format!("{} ({})", newest, days)
+            } else {
+                newest.clone()
+            };
+            card_content = card_content.push(
+                row![
+                    text("Самый новый:").width(140).style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                    text(newest_display).size(13),
+                ]
+                .spacing(10),
+            );
         }
 
-        card_content = card_content
-            .push(row![text("Путь:").width(150), text(&status.path).size(12),].spacing(10));
+        card_content = card_content.push(
+            row![
+                text("Путь:").width(140).style(|_theme| text::Style {
+                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                }),
+                text(&status.path).size(11).style(|_theme| text::Style {
+                    color: Some(iced::Color::from_rgb(0.6, 0.6, 0.6))
+                }),
+            ]
+            .spacing(10),
+        );
 
-        if let Some(btn) = enable_button {
-            card_content = card_content.push(Space::with_height(10)).push(btn);
+        if status.is_disabled {
+            card_content = card_content.push(Space::with_height(15)).push(
+                container(
+                    button("Включить запись Recent")
+                        .on_press(Message::EnableRecent)
+                        .padding(10),
+                )
+                .center_x(Fill),
+            );
         }
 
-        container(card_content).style(container::rounded_box)
+        container(card_content).style(|_theme| container::Style {
+            background: Some(iced::Background::Color(iced::Color::from_rgb(
+                0.15, 0.2, 0.25,
+            ))),
+            border: iced::Border {
+                color: iced::Color::from_rgb(0.3, 0.4, 0.5),
+                width: 1.0,
+                radius: 8.0.into(),
+            },
+            ..Default::default()
+        })
     } else {
         container(text("Загрузка статуса Recent...").size(16).width(Fill))
             .padding(20)
@@ -235,67 +330,118 @@ fn view(state: &State) -> Element<'_, Message> {
             "ОСТАНОВЛЕНА"
         };
 
-        let enable_button = if !status.is_running || !status.is_auto {
-            Some(
-                container(button("Включить службу Prefetch").on_press(Message::EnableSysMain))
-                    .center_x(Fill)
-                    .padding(10),
-            )
-        } else {
-            None
-        };
-
         let mut card_content = column![
-            text("Prefetch").size(18).width(Fill),
-            Space::with_height(10),
-            row![text("Служба:").width(150), text(service_text).size(16),].spacing(10),
-            row![text("Тип запуска:").width(150), text(&status.startup_type),].spacing(10),
+            row![
+                text("PREFETCH (SuperFetch)").size(20),
+                Space::with_width(Fill),
+                button("Открыть папку")
+                    .on_press(Message::OpenPrefetchFolder)
+                    .padding([5, 10]),
+            ]
+            .align_y(iced::Alignment::Center),
+            Space::with_height(15),
+            row![
+                text("Статус службы:")
+                    .width(140)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                text(service_text).size(15).style(|_theme| text::Style {
+                    color: Some(if status.is_running {
+                        iced::Color::from_rgb(0.4, 1.0, 0.4)
+                    } else {
+                        iced::Color::from_rgb(1.0, 0.4, 0.4)
+                    })
+                }),
+            ]
+            .spacing(10),
+            row![
+                text("Тип запуска:").width(140).style(|_theme| text::Style {
+                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                }),
+                text(&status.startup_type),
+            ]
+            .spacing(10),
+            row![
+                text("Файлов (.pf):")
+                    .width(140)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                text(format!("{}", status.prefetch_count)),
+            ]
+            .spacing(10),
         ]
         .spacing(8)
-        .padding(15);
-
-        // Отображение количества с днями в скобках
-        if let Some(days) = &status.days_since_last {
-            card_content = card_content.push(
-                row![
-                    text("Prefetch:").width(150),
-                    text(format!("{} файлов (.pf) [{}]", status.prefetch_count, days)),
-                ]
-                .spacing(10),
-            );
-        } else {
-            card_content = card_content.push(
-                row![
-                    text("Prefetch:").width(150),
-                    text(format!("{} файлов (.pf)", status.prefetch_count)),
-                ]
-                .spacing(10),
-            );
-        }
+        .padding(20);
 
         if let Some(oldest) = &status.oldest_file {
-            card_content = card_content
-                .push(row![text("Самый старый:").width(150), text(oldest).size(12),].spacing(10));
+            card_content = card_content.push(
+                row![
+                    text("Самый старый:")
+                        .width(140)
+                        .style(|_theme| text::Style {
+                            color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                        }),
+                    text(oldest).size(13),
+                ]
+                .spacing(10),
+            );
         }
 
         if let Some(newest) = &status.newest_file {
-            card_content = card_content
-                .push(row![text("Самый новый:").width(150), text(newest).size(12),].spacing(10));
+            let newest_display = if let Some(days) = &status.days_since_last {
+                format!("{} ({})", newest, days)
+            } else {
+                newest.clone()
+            };
+            card_content = card_content.push(
+                row![
+                    text("Самый новый:").width(140).style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                    text(newest_display).size(13),
+                ]
+                .spacing(10),
+            );
         }
 
         card_content = card_content.push(
             row![
-                text("Путь:").width(150),
-                text(&status.prefetch_path).size(12),
+                text("Путь:").width(140).style(|_theme| text::Style {
+                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                }),
+                text(&status.prefetch_path)
+                    .size(11)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.6, 0.6, 0.6))
+                    }),
             ]
             .spacing(10),
         );
 
-        if let Some(btn) = enable_button {
-            card_content = card_content.push(Space::with_height(10)).push(btn);
+        if !status.is_running || !status.is_auto {
+            card_content = card_content.push(Space::with_height(15)).push(
+                container(
+                    button("Включить службу Prefetch")
+                        .on_press(Message::EnableSysMain)
+                        .padding(10),
+                )
+                .center_x(Fill),
+            );
         }
 
-        container(card_content).style(container::rounded_box)
+        container(card_content).style(|_theme| container::Style {
+            background: Some(iced::Background::Color(iced::Color::from_rgb(
+                0.15, 0.25, 0.2,
+            ))),
+            border: iced::Border {
+                color: iced::Color::from_rgb(0.3, 0.5, 0.4),
+                width: 1.0,
+                radius: 8.0.into(),
+            },
+            ..Default::default()
+        })
     } else {
         container(text("Загрузка статуса Prefetch...").size(16).width(Fill))
             .padding(20)
@@ -305,8 +451,18 @@ fn view(state: &State) -> Element<'_, Message> {
     let status_msg = if !state.status_message.is_empty() {
         Some(
             container(text(&state.status_message).size(14))
-                .padding(10)
-                .style(container::rounded_box),
+                .padding(12)
+                .style(|_theme| container::Style {
+                    background: Some(iced::Background::Color(iced::Color::from_rgb(
+                        0.2, 0.25, 0.15,
+                    ))),
+                    border: iced::Border {
+                        color: iced::Color::from_rgb(0.5, 0.6, 0.3),
+                        width: 1.0,
+                        radius: 6.0.into(),
+                    },
+                    ..Default::default()
+                }),
         )
     } else {
         None
@@ -315,10 +471,23 @@ fn view(state: &State) -> Element<'_, Message> {
     let hint = if !state.is_admin {
         Some(
             container(
-                text("Подсказка: Для полного доступа запустите с правами администратора").size(12),
+                row![
+                    text("⚠").size(16).style(|_theme| text::Style { color: Some(iced::Color::from_rgb(1.0, 0.8, 0.2)) }),
+                    Space::with_width(8),
+                    text("Для полного доступа к функциям запустите программу с правами администратора").size(12),
+                ]
+                .align_y(iced::Alignment::Center)
             )
-            .padding(10)
-            .style(container::rounded_box),
+            .padding(12)
+            .style(|_theme| container::Style {
+                background: Some(iced::Background::Color(iced::Color::from_rgb(0.25, 0.2, 0.15))),
+                border: iced::Border {
+                    color: iced::Color::from_rgb(0.6, 0.5, 0.3),
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            }),
         )
     } else {
         None
