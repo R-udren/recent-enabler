@@ -80,23 +80,6 @@ pub fn get_recent_files_count() -> Result<usize> {
 
     Ok(count)
 }
-pub fn get_recent_folder_size() -> Result<u64> {
-    let recent_path = get_recent_folder()?;
-
-    if !recent_path.exists() {
-        return Ok(0);
-    }
-
-    let total_size = std::fs::read_dir(&recent_path)
-        .context("Не удалось прочитать папку Recent")?
-        .filter_map(|e| e.ok())
-        .filter_map(|e| e.metadata().ok())
-        .map(|m| m.len())
-        .sum();
-
-    Ok(total_size)
-}
-
 pub fn get_recent_file_dates() -> Result<(Option<String>, Option<String>)> {
     let recent_path = get_recent_folder()?;
 

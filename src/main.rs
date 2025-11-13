@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod recent;
 mod sysmain;
 mod utils;
@@ -6,10 +8,10 @@ use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Element, Fill, Task, Theme};
 
 fn main() -> iced::Result {
-    iced::application("Recent & SysMain Manager", update, view)
+    iced::application("Recent & Prefetch", update, view)
         .theme(|_| Theme::Dark)
         .window(iced::window::Settings {
-            size: iced::Size::new(700.0, 650.0),
+            size: iced::Size::new(800.0, 750.0),
             ..Default::default()
         })
         .run_with(|| {
@@ -43,7 +45,6 @@ struct RecentStatus {
     is_disabled: bool,
     is_empty: bool,
     files_count: usize,
-    folder_size: String,
     oldest_file: Option<String>,
     newest_file: Option<String>,
     days_since_last: Option<String>,
@@ -125,7 +126,10 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::SysMainEnabled(result) => match result {
             Ok(msg) => {
                 state.status_message = msg;
-                Task::perform(check_sysmain_async(), Message::SysMainChecked)
+                Task::batch(vec![
+                    Task::perform(check_recent_async(), Message::RecentChecked),
+                    Task::perform(check_sysmain_async(), Message::SysMainChecked),
+                ])
             }
             Err(e) => {
                 state.status_message = format!("Ошибка: {}", e);
@@ -152,13 +156,42 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 }
 
 fn view(state: &State) -> Element<'_, Message> {
+    let admin_badge = container(
+        text(if state.is_admin {
+            "Администратор"
+        } else {
+            "Без прав администратора"
+        })
+        .size(12),
+    )
+    .padding([5, 10])
+    .style(|_theme| container::Style {
+        background: Some(iced::Background::Color(if state.is_admin {
+            iced::Color::from_rgb(0.15, 0.3, 0.15)
+        } else {
+            iced::Color::from_rgb(0.3, 0.2, 0.15)
+        })),
+        border: iced::Border {
+            color: if state.is_admin {
+                iced::Color::from_rgb(0.3, 0.6, 0.3)
+            } else {
+                iced::Color::from_rgb(0.6, 0.4, 0.3)
+            },
+            width: 1.0,
+            radius: 6.0.into(),
+        },
+        ..Default::default()
+    });
+
     let header = row![
         text("Recent & Prefetch Manager")
             .size(26)
-            .width(Fill)
             .style(|_theme| text::Style {
                 color: Some(iced::Color::from_rgb(0.9, 0.9, 1.0))
             }),
+        Space::with_width(Fill),
+        admin_badge,
+        Space::with_width(10),
         button("Обновить")
             .on_press(Message::Refresh)
             .padding([8, 16])
@@ -184,33 +217,6 @@ fn view(state: &State) -> Element<'_, Message> {
     .padding(15)
     .align_y(iced::Alignment::Center);
 
-    let admin_badge = container(
-        text(if state.is_admin {
-            "Администратор"
-        } else {
-            "Без прав администратора"
-        })
-        .size(13),
-    )
-    .padding([6, 12])
-    .style(|_theme| container::Style {
-        background: Some(iced::Background::Color(if state.is_admin {
-            iced::Color::from_rgb(0.15, 0.3, 0.15)
-        } else {
-            iced::Color::from_rgb(0.3, 0.2, 0.15)
-        })),
-        border: iced::Border {
-            color: if state.is_admin {
-                iced::Color::from_rgb(0.3, 0.6, 0.3)
-            } else {
-                iced::Color::from_rgb(0.6, 0.4, 0.3)
-            },
-            width: 1.0,
-            radius: 6.0.into(),
-        },
-        ..Default::default()
-    });
-
     let recent_card = if let Some(status) = &state.recent_status {
         let status_text = if status.is_disabled {
             "ОТКЛЮЧЕНА"
@@ -220,19 +226,22 @@ fn view(state: &State) -> Element<'_, Message> {
 
         let mut card_content = column![
             row![
-                text("RECENT (Недавние файлы)").size(20),
+                text("RECENT (Недавние файлы)").size(22),
                 Space::with_width(Fill),
                 button("Открыть папку")
                     .on_press(Message::OpenRecentFolder)
-                    .padding([5, 10]),
+                    .padding([6, 12]),
             ]
             .align_y(iced::Alignment::Center),
-            Space::with_height(15),
+            Space::with_height(18),
             row![
-                text("Статус:").width(140).style(|_theme| text::Style {
-                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
-                }),
-                text(status_text).size(15).style(|_theme| text::Style {
+                text("Статус:")
+                    .width(160)
+                    .size(15)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                text(status_text).size(18).style(|_theme| text::Style {
                     color: Some(if status.is_disabled {
                         iced::Color::from_rgb(1.0, 0.4, 0.4)
                     } else {
@@ -242,25 +251,29 @@ fn view(state: &State) -> Element<'_, Message> {
             ]
             .spacing(10),
             row![
-                text("Файлов:").width(140).style(|_theme| text::Style {
-                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
-                }),
-                text(format!("{} ({})", status.files_count, status.folder_size)),
+                text("Файлов:")
+                    .width(160)
+                    .size(15)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                text(format!("{}", status.files_count)).size(18),
             ]
             .spacing(10),
         ]
-        .spacing(8)
-        .padding(20);
+        .spacing(10)
+        .padding(22);
 
         if let Some(oldest) = &status.oldest_file {
             card_content = card_content.push(
                 row![
                     text("Самый старый:")
-                        .width(140)
+                        .width(160)
+                        .size(15)
                         .style(|_theme| text::Style {
                             color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
                         }),
-                    text(oldest).size(13),
+                    text(oldest).size(14),
                 ]
                 .spacing(10),
             );
@@ -274,10 +287,13 @@ fn view(state: &State) -> Element<'_, Message> {
             };
             card_content = card_content.push(
                 row![
-                    text("Самый новый:").width(140).style(|_theme| text::Style {
-                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
-                    }),
-                    text(newest_display).size(13),
+                    text("Самый новый:")
+                        .width(160)
+                        .size(15)
+                        .style(|_theme| text::Style {
+                            color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                        }),
+                    text(newest_display).size(14),
                 ]
                 .spacing(10),
             );
@@ -285,10 +301,13 @@ fn view(state: &State) -> Element<'_, Message> {
 
         card_content = card_content.push(
             row![
-                text("Путь:").width(140).style(|_theme| text::Style {
-                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
-                }),
-                text(&status.path).size(11).style(|_theme| text::Style {
+                text("Путь:")
+                    .width(160)
+                    .size(15)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                text(&status.path).size(12).style(|_theme| text::Style {
                     color: Some(iced::Color::from_rgb(0.6, 0.6, 0.6))
                 }),
             ]
@@ -332,21 +351,22 @@ fn view(state: &State) -> Element<'_, Message> {
 
         let mut card_content = column![
             row![
-                text("PREFETCH (SuperFetch)").size(20),
+                text("PREFETCH (SuperFetch)").size(22),
                 Space::with_width(Fill),
                 button("Открыть папку")
                     .on_press(Message::OpenPrefetchFolder)
-                    .padding([5, 10]),
+                    .padding([6, 12]),
             ]
             .align_y(iced::Alignment::Center),
-            Space::with_height(15),
+            Space::with_height(18),
             row![
                 text("Статус службы:")
-                    .width(140)
+                    .width(160)
+                    .size(15)
                     .style(|_theme| text::Style {
                         color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
                     }),
-                text(service_text).size(15).style(|_theme| text::Style {
+                text(service_text).size(18).style(|_theme| text::Style {
                     color: Some(if status.is_running {
                         iced::Color::from_rgb(0.4, 1.0, 0.4)
                     } else {
@@ -356,34 +376,39 @@ fn view(state: &State) -> Element<'_, Message> {
             ]
             .spacing(10),
             row![
-                text("Тип запуска:").width(140).style(|_theme| text::Style {
-                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
-                }),
-                text(&status.startup_type),
+                text("Тип запуска:")
+                    .width(160)
+                    .size(15)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
+                text(&status.startup_type).size(18),
             ]
             .spacing(10),
             row![
                 text("Файлов (.pf):")
-                    .width(140)
+                    .width(160)
+                    .size(15)
                     .style(|_theme| text::Style {
                         color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
                     }),
-                text(format!("{}", status.prefetch_count)),
+                text(format!("{}", status.prefetch_count)).size(18),
             ]
             .spacing(10),
         ]
-        .spacing(8)
-        .padding(20);
+        .spacing(10)
+        .padding(22);
 
         if let Some(oldest) = &status.oldest_file {
             card_content = card_content.push(
                 row![
                     text("Самый старый:")
-                        .width(140)
+                        .width(160)
+                        .size(15)
                         .style(|_theme| text::Style {
                             color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
                         }),
-                    text(oldest).size(13),
+                    text(oldest).size(16),
                 ]
                 .spacing(10),
             );
@@ -397,10 +422,13 @@ fn view(state: &State) -> Element<'_, Message> {
             };
             card_content = card_content.push(
                 row![
-                    text("Самый новый:").width(140).style(|_theme| text::Style {
-                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
-                    }),
-                    text(newest_display).size(13),
+                    text("Самый новый:")
+                        .width(160)
+                        .size(15)
+                        .style(|_theme| text::Style {
+                            color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                        }),
+                    text(newest_display).size(16),
                 ]
                 .spacing(10),
             );
@@ -408,11 +436,14 @@ fn view(state: &State) -> Element<'_, Message> {
 
         card_content = card_content.push(
             row![
-                text("Путь:").width(140).style(|_theme| text::Style {
-                    color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
-                }),
+                text("Путь:")
+                    .width(160)
+                    .size(15)
+                    .style(|_theme| text::Style {
+                        color: Some(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    }),
                 text(&status.prefetch_path)
-                    .size(11)
+                    .size(12)
                     .style(|_theme| text::Style {
                         color: Some(iced::Color::from_rgb(0.6, 0.6, 0.6))
                     }),
@@ -421,14 +452,52 @@ fn view(state: &State) -> Element<'_, Message> {
         );
 
         if !status.is_running || !status.is_auto {
-            card_content = card_content.push(Space::with_height(15)).push(
-                container(
-                    button("Включить службу Prefetch")
-                        .on_press(Message::EnableSysMain)
-                        .padding(10),
+            if state.is_admin {
+                card_content = card_content.push(Space::with_height(15)).push(
+                    container(
+                        button("Включить службу Prefetch")
+                            .on_press(Message::EnableSysMain)
+                            .padding(10),
+                    )
+                    .center_x(Fill),
+                );
+            } else {
+                let disabled_btn = button("Включить службу Prefetch").padding(10).style(
+                    |_theme: &iced::Theme, _status| button::Style {
+                        background: Some(iced::Background::Color(iced::Color::from_rgb(
+                            0.3, 0.3, 0.3,
+                        ))),
+                        text_color: iced::Color::from_rgb(0.5, 0.5, 0.5),
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                );
+
+                let button_with_tooltip = iced::widget::tooltip(
+                    disabled_btn,
+                    "Требуются права администратора",
+                    iced::widget::tooltip::Position::Top,
                 )
-                .center_x(Fill),
-            );
+                .style(|_theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(iced::Color::from_rgb(
+                        0.1, 0.1, 0.1,
+                    ))),
+                    text_color: Some(iced::Color::WHITE),
+                    border: iced::Border {
+                        color: iced::Color::from_rgb(0.5, 0.5, 0.5),
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                });
+
+                card_content = card_content
+                    .push(Space::with_height(15))
+                    .push(container(button_with_tooltip).center_x(Fill));
+            }
         }
 
         container(card_content).style(|_theme| container::Style {
@@ -471,16 +540,18 @@ fn view(state: &State) -> Element<'_, Message> {
     let hint = if !state.is_admin {
         Some(
             container(
-                row![
-                    text("⚠").size(16).style(|_theme| text::Style { color: Some(iced::Color::from_rgb(1.0, 0.8, 0.2)) }),
-                    Space::with_width(8),
-                    text("Для полного доступа к функциям запустите программу с правами администратора").size(12),
-                ]
-                .align_y(iced::Alignment::Center)
+                row![text(
+                    "Для полного доступа к функциям запустите программу с правами администратора"
+                )
+                .size(13)
+                .width(Fill),]
+                .align_y(iced::Alignment::Center),
             )
             .padding(12)
             .style(|_theme| container::Style {
-                background: Some(iced::Background::Color(iced::Color::from_rgb(0.25, 0.2, 0.15))),
+                background: Some(iced::Background::Color(iced::Color::from_rgb(
+                    0.25, 0.2, 0.15,
+                ))),
                 border: iced::Border {
                     color: iced::Color::from_rgb(0.6, 0.5, 0.3),
                     width: 1.0,
@@ -493,24 +564,21 @@ fn view(state: &State) -> Element<'_, Message> {
         None
     };
 
-    let mut content = column![
-        header,
-        admin_badge,
-        Space::with_height(15),
-        recent_card,
-        Space::with_height(15),
-        sysmain_card,
-    ]
-    .spacing(5)
-    .padding(15);
-
-    if let Some(msg) = status_msg {
-        content = content.push(Space::with_height(10)).push(msg);
-    }
+    let mut content = column![header].spacing(5).padding(15);
 
     if let Some(h) = hint {
-        content = content.push(Space::with_height(10)).push(h);
+        content = content.push(h);
     }
+
+    if let Some(msg) = status_msg {
+        content = content.push(msg);
+    }
+
+    content = content
+        .push(Space::with_height(15))
+        .push(recent_card)
+        .push(Space::with_height(15))
+        .push(sysmain_card);
 
     container(scrollable(content))
         .width(Fill)
@@ -523,7 +591,6 @@ async fn check_recent_async() -> Result<RecentStatus, String> {
     let is_disabled = recent::is_recent_disabled().map_err(|e| e.to_string())?;
     let is_empty = recent::is_recent_folder_empty().map_err(|e| e.to_string())?;
     let files_count = recent::get_recent_files_count().map_err(|e| e.to_string())?;
-    let folder_size_bytes = recent::get_recent_folder_size().map_err(|e| e.to_string())?;
     let (oldest_file, newest_file) = recent::get_recent_file_dates().unwrap_or((None, None));
     let days_since_last = recent::get_days_since_last_recent().unwrap_or(None);
 
@@ -532,7 +599,6 @@ async fn check_recent_async() -> Result<RecentStatus, String> {
         is_disabled,
         is_empty,
         files_count,
-        folder_size: utils::format_size(folder_size_bytes),
         oldest_file,
         newest_file,
         days_since_last,
