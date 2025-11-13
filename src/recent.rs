@@ -11,8 +11,8 @@ pub fn get_recent_folder() -> Result<PathBuf> {
 }
 pub fn is_recent_disabled() -> Result<bool> {
     unsafe {
-        let key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer";
-        let value_name = "NoRecentDocsHistory";
+        let key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
+        let value_name = "Start_TrackDocs";
 
         let mut hkey = HKEY::default();
         let key_path_wide: Vec<u16> = key_path.encode_utf16().chain(Some(0)).collect();
@@ -26,7 +26,7 @@ pub fn is_recent_disabled() -> Result<bool> {
         );
 
         if result.is_err() {
-            return Ok(false);
+            return Ok(true); // Если ключ не существует, считаем что отключено
         }
 
         let value_name_wide: Vec<u16> = value_name.encode_utf16().chain(Some(0)).collect();
@@ -39,16 +39,16 @@ pub fn is_recent_disabled() -> Result<bool> {
             PCWSTR(value_name_wide.as_ptr()),
             None,
             Some(&mut data_type),
-            Some(&mut data as *mut u32 as *mut u8),
+            Some(std::ptr::addr_of_mut!(data) as *mut u8),
             Some(&mut data_size),
         );
 
         let _ = RegCloseKey(hkey);
 
         if result.is_ok() && data_type == REG_DWORD {
-            Ok(data == 1)
+            Ok(data == 0) // 0 = отключено, 1 = включено
         } else {
-            Ok(false)
+            Ok(true) // Если значение не найдено, считаем что отключено
         }
     }
 }
@@ -76,6 +76,13 @@ pub fn get_recent_files_count() -> Result<usize> {
     let count = std::fs::read_dir(&recent_path)
         .context("Не удалось прочитать папку Recent")?
         .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("lnk"))
+                .unwrap_or(false)
+        })
         .count();
 
     Ok(count)
@@ -146,26 +153,41 @@ pub fn get_days_since_last_recent() -> Result<Option<String>> {
 
 pub fn enable_recent() -> Result<()> {
     unsafe {
-        let key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer";
-        let value_name = "NoRecentDocsHistory";
+        let key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
+        let value_name = "Start_TrackDocs";
 
         let mut hkey = HKEY::default();
         let key_path_wide: Vec<u16> = key_path.encode_utf16().chain(Some(0)).collect();
 
-        let result = RegOpenKeyExW(
+        let result = RegCreateKeyExW(
             HKEY_CURRENT_USER,
             PCWSTR(key_path_wide.as_ptr()),
             Some(0),
+            None,
+            REG_OPTION_NON_VOLATILE,
             KEY_WRITE,
+            None,
             &mut hkey,
+            None,
         );
 
         if result.is_err() {
-            return Ok(());
+            return Err(anyhow::anyhow!("Не удалось открыть ключ реестра"));
         }
 
         let value_name_wide: Vec<u16> = value_name.encode_utf16().chain(Some(0)).collect();
-        let result = RegDeleteValueW(hkey, PCWSTR(value_name_wide.as_ptr()));
+        let data: u32 = 1; // 1 = включено
+
+        let result = RegSetValueExW(
+            hkey,
+            PCWSTR(value_name_wide.as_ptr()),
+            Some(0),
+            REG_DWORD,
+            Some(std::slice::from_raw_parts(
+                std::ptr::addr_of!(data) as *const u8,
+                std::mem::size_of::<u32>(),
+            )),
+        );
 
         let _ = RegCloseKey(hkey);
 
