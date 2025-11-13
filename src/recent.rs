@@ -109,11 +109,73 @@ pub fn is_recent_disabled() -> Result<bool> {
 
         let _ = RegCloseKey(hkey);
 
-        if result.is_ok() && data_type == REG_DWORD {
-            Ok(data == 0) // 0 = отключено, 1 = включено
+        // 0 = отключено, 1 = включено
+        let track_docs_disabled = if result.is_ok() && data_type == REG_DWORD {
+            data == 0
         } else {
-            Ok(true) // Если значение не найдено, считаем что отключено
+            true // Если значение не найдено, считаем что отключено
+        };
+
+        // Дополнительно учитываем Explorer\ShowRecent и Explorer\ShowFrequent
+        let explorer_key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+
+        let mut show_recent_disabled = true;
+        let mut show_frequent_disabled = true;
+
+        // ShowRecent
+        let mut hkey_explorer = HKEY::default();
+        let explorer_key_path_w: Vec<u16> =
+            explorer_key_path.encode_utf16().chain(Some(0)).collect();
+        if RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(explorer_key_path_w.as_ptr()),
+            Some(0),
+            KEY_READ,
+            &mut hkey_explorer,
+        )
+        .is_ok()
+        {
+            let value_name_w: Vec<u16> = "ShowRecent".encode_utf16().chain(Some(0)).collect();
+            let mut v: u32 = 0;
+            let mut sz = std::mem::size_of::<u32>() as u32;
+            let mut ty = REG_NONE;
+            if RegQueryValueExW(
+                hkey_explorer,
+                PCWSTR(value_name_w.as_ptr()),
+                None,
+                Some(&mut ty),
+                Some(std::ptr::addr_of_mut!(v) as *mut u8),
+                Some(&mut sz),
+            )
+            .is_ok()
+                && ty == REG_DWORD
+            {
+                show_recent_disabled = v == 0;
+            }
+
+            // ShowFrequent
+            let value_name_w: Vec<u16> = "ShowFrequent".encode_utf16().chain(Some(0)).collect();
+            let mut v2: u32 = 0;
+            let mut sz2 = std::mem::size_of::<u32>() as u32;
+            let mut ty2 = REG_NONE;
+            if RegQueryValueExW(
+                hkey_explorer,
+                PCWSTR(value_name_w.as_ptr()),
+                None,
+                Some(&mut ty2),
+                Some(std::ptr::addr_of_mut!(v2) as *mut u8),
+                Some(&mut sz2),
+            )
+            .is_ok()
+                && ty2 == REG_DWORD
+            {
+                show_frequent_disabled = v2 == 0;
+            }
+
+            let _ = RegCloseKey(hkey_explorer);
         }
+
+        Ok(track_docs_disabled || show_recent_disabled || show_frequent_disabled)
     }
 }
 
@@ -157,11 +219,46 @@ pub fn enable_recent() -> Result<()> {
 
         let _ = RegCloseKey(hkey);
 
-        if result.is_ok() {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Не удалось включить Recent"))
+        if result.is_err() {
+            return Err(anyhow::anyhow!("Не удалось включить Recent"));
         }
+
+        // Также включаем отображение Recent и Frequent в Проводнике
+        let explorer_key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+        let mut hkey_explorer = HKEY::default();
+        let explorer_key_path_w: Vec<u16> =
+            explorer_key_path.encode_utf16().chain(Some(0)).collect();
+        let _ = RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(explorer_key_path_w.as_ptr()),
+            Some(0),
+            None,
+            REG_OPTION_NON_VOLATILE,
+            KEY_WRITE,
+            None,
+            &mut hkey_explorer,
+            None,
+        );
+
+        if !hkey_explorer.is_invalid() {
+            let one: u32 = 1;
+            for name in ["ShowRecent", "ShowFrequent"] {
+                let name_w: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+                let _ = RegSetValueExW(
+                    hkey_explorer,
+                    PCWSTR(name_w.as_ptr()),
+                    Some(0),
+                    REG_DWORD,
+                    Some(std::slice::from_raw_parts(
+                        std::ptr::addr_of!(one) as *const u8,
+                        std::mem::size_of::<u32>(),
+                    )),
+                );
+            }
+            let _ = RegCloseKey(hkey_explorer);
+        }
+
+        Ok(())
     }
 }
 

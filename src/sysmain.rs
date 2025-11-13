@@ -30,9 +30,11 @@ pub fn get_prefetch_info() -> Result<PrefetchInfo> {
         });
     }
 
-    let entries: Vec<_> = std::fs::read_dir(&prefetch_path)
-        .map(|dir| dir.filter_map(|e| e.ok()).collect())
-        .unwrap_or_else(|_| Vec::new());
+    let read_dir_result = std::fs::read_dir(&prefetch_path);
+    let entries: Vec<_> = match read_dir_result {
+        Ok(dir) => dir.filter_map(|e| e.ok()).collect(),
+        Err(e) => return Err(anyhow::anyhow!(e)).context("Не удалось прочитать папку Prefetch")?,
+    };
 
     let mut pf_count = 0;
     let mut dates = Vec::new();
