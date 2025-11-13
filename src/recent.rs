@@ -96,6 +96,71 @@ pub fn get_recent_folder_size() -> Result<u64> {
 
     Ok(total_size)
 }
+
+pub fn get_recent_file_dates() -> Result<(Option<String>, Option<String>)> {
+    let recent_path = get_recent_folder()?;
+
+    if !recent_path.exists() {
+        return Ok((None, None));
+    }
+
+    let mut dates: Vec<std::time::SystemTime> = std::fs::read_dir(&recent_path)
+        .context("Не удалось прочитать папку Recent")?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.metadata().ok())
+        .filter_map(|m| m.modified().ok())
+        .collect();
+
+    if dates.is_empty() {
+        return Ok((None, None));
+    }
+
+    dates.sort();
+
+    let format_time = |time: std::time::SystemTime| -> String {
+        let datetime: chrono::DateTime<chrono::Local> = time.into();
+        datetime.format("%d.%m.%Y %H:%M").to_string()
+    };
+
+    let oldest = dates.first().map(|t| format_time(*t));
+    let newest = dates.last().map(|t| format_time(*t));
+
+    Ok((oldest, newest))
+}
+
+pub fn get_days_since_last_recent() -> Result<Option<String>> {
+    let recent_path = get_recent_folder()?;
+
+    if !recent_path.exists() {
+        return Ok(None);
+    }
+
+    let newest_time = std::fs::read_dir(&recent_path)
+        .context("Не удалось прочитать папку Recent")?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.metadata().ok())
+        .filter_map(|m| m.modified().ok())
+        .max();
+
+    if let Some(time) = newest_time {
+        let now = std::time::SystemTime::now();
+        if let Ok(duration) = now.duration_since(time) {
+            let days = duration.as_secs() / 86400;
+            if days == 0 {
+                Ok(Some("сегодня".to_string()))
+            } else if days == 1 {
+                Ok(Some("1 день назад".to_string()))
+            } else {
+                Ok(Some(format!("{} дн. назад", days)))
+            }
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn enable_recent() -> Result<()> {
     unsafe {
         let key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer";
@@ -124,7 +189,7 @@ pub fn enable_recent() -> Result<()> {
         if result.is_ok() {
             Ok(())
         } else {
-            Ok(())
+            Err(anyhow::anyhow!("Не удалось включить Recent"))
         }
     }
 }

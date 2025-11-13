@@ -77,6 +77,51 @@ pub fn get_prefetch_file_dates() -> Result<(Option<String>, Option<String>)> {
         Err(_) => Ok((None, None)),
     }
 }
+
+pub fn get_days_since_last_prefetch() -> Result<Option<String>> {
+    let prefetch_path = get_prefetch_folder()?;
+
+    if !prefetch_path.exists() {
+        return Ok(None);
+    }
+
+    match std::fs::read_dir(&prefetch_path) {
+        Ok(entries) => {
+            let newest_time = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("pf"))
+                        .unwrap_or(false)
+                })
+                .filter_map(|e| e.metadata().ok())
+                .filter_map(|m| m.modified().ok())
+                .max();
+
+            if let Some(time) = newest_time {
+                let now = std::time::SystemTime::now();
+                if let Ok(duration) = now.duration_since(time) {
+                    let days = duration.as_secs() / 86400;
+                    if days == 0 {
+                        Ok(Some("сегодня".to_string()))
+                    } else if days == 1 {
+                        Ok(Some("1 день назад".to_string()))
+                    } else {
+                        Ok(Some(format!("{} дн. назад", days)))
+                    }
+                } else {
+                    Ok(None)
+                }
+            } else {
+                Ok(None)
+            }
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServiceStatus {
     Running,

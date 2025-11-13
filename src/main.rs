@@ -42,6 +42,9 @@ struct RecentStatus {
     is_empty: bool,
     files_count: usize,
     folder_size: String,
+    oldest_file: Option<String>,
+    newest_file: Option<String>,
+    days_since_last: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +58,7 @@ struct SysMainStatus {
     prefetch_count: usize,
     oldest_file: Option<String>,
     newest_file: Option<String>,
+    days_since_last: Option<String>,
 }
 
 #[derive(Default)]
@@ -101,7 +105,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.status_message = String::new();
                 }
                 Err(e) => {
-                    state.status_message = format!("Ошибка SysMain: {}", e);
+                    state.status_message = format!("Ошибка Prefetch: {}", e);
                 }
             }
             Task::none()
@@ -131,7 +135,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 
 fn view(state: &State) -> Element<'_, Message> {
     let header = row![
-        text("Recent & SysMain Manager").size(24).width(Fill),
+        text("Recent & Prefetch Manager").size(24).width(Fill),
         button("Обновить").on_press(Message::Refresh).padding(10),
     ]
     .spacing(10)
@@ -174,15 +178,44 @@ fn view(state: &State) -> Element<'_, Message> {
                 text(status_text).size(16),
             ]
             .spacing(10),
-            row![
-                text("Файлов в папке:").width(150),
-                text(format!("{} ({})", status.files_count, status.folder_size)),
-            ]
-            .spacing(10),
-            row![text("Путь:").width(150), text(&status.path).size(12),].spacing(10),
         ]
         .spacing(8)
         .padding(15);
+
+        // Отображение количества с днями в скобках
+        if let Some(days) = &status.days_since_last {
+            card_content = card_content.push(
+                row![
+                    text("Файлов в папке:").width(150),
+                    text(format!(
+                        "{} ({}) [{}]",
+                        status.files_count, status.folder_size, days
+                    )),
+                ]
+                .spacing(10),
+            );
+        } else {
+            card_content = card_content.push(
+                row![
+                    text("Файлов в папке:").width(150),
+                    text(format!("{} ({})", status.files_count, status.folder_size)),
+                ]
+                .spacing(10),
+            );
+        }
+
+        if let Some(oldest) = &status.oldest_file {
+            card_content = card_content
+                .push(row![text("Самый старый:").width(150), text(oldest).size(12),].spacing(10));
+        }
+
+        if let Some(newest) = &status.newest_file {
+            card_content = card_content
+                .push(row![text("Самый новый:").width(150), text(newest).size(12),].spacing(10));
+        }
+
+        card_content = card_content
+            .push(row![text("Путь:").width(150), text(&status.path).size(12),].spacing(10));
 
         if let Some(btn) = enable_button {
             card_content = card_content.push(Space::with_height(10)).push(btn);
@@ -204,7 +237,7 @@ fn view(state: &State) -> Element<'_, Message> {
 
         let enable_button = if !status.is_running || !status.is_auto {
             Some(
-                container(button("Включить службу SysMain").on_press(Message::EnableSysMain))
+                container(button("Включить службу Prefetch").on_press(Message::EnableSysMain))
                     .center_x(Fill)
                     .padding(10),
             )
@@ -213,18 +246,32 @@ fn view(state: &State) -> Element<'_, Message> {
         };
 
         let mut card_content = column![
-            text("SYSMAIN (SuperFetch)").size(18).width(Fill),
+            text("Prefetch").size(18).width(Fill),
             Space::with_height(10),
             row![text("Служба:").width(150), text(service_text).size(16),].spacing(10),
             row![text("Тип запуска:").width(150), text(&status.startup_type),].spacing(10),
-            row![
-                text("Prefetch:").width(150),
-                text(format!("{} файлов (.pf)", status.prefetch_count)),
-            ]
-            .spacing(10),
         ]
         .spacing(8)
         .padding(15);
+
+        // Отображение количества с днями в скобках
+        if let Some(days) = &status.days_since_last {
+            card_content = card_content.push(
+                row![
+                    text("Prefetch:").width(150),
+                    text(format!("{} файлов (.pf) [{}]", status.prefetch_count, days)),
+                ]
+                .spacing(10),
+            );
+        } else {
+            card_content = card_content.push(
+                row![
+                    text("Prefetch:").width(150),
+                    text(format!("{} файлов (.pf)", status.prefetch_count)),
+                ]
+                .spacing(10),
+            );
+        }
 
         if let Some(oldest) = &status.oldest_file {
             card_content = card_content
@@ -250,7 +297,7 @@ fn view(state: &State) -> Element<'_, Message> {
 
         container(card_content).style(container::rounded_box)
     } else {
-        container(text("Загрузка статуса SysMain...").size(16).width(Fill))
+        container(text("Загрузка статуса Prefetch...").size(16).width(Fill))
             .padding(20)
             .style(container::rounded_box)
     };
@@ -308,6 +355,8 @@ async fn check_recent_async() -> Result<RecentStatus, String> {
     let is_empty = recent::is_recent_folder_empty().map_err(|e| e.to_string())?;
     let files_count = recent::get_recent_files_count().map_err(|e| e.to_string())?;
     let folder_size_bytes = recent::get_recent_folder_size().map_err(|e| e.to_string())?;
+    let (oldest_file, newest_file) = recent::get_recent_file_dates().unwrap_or((None, None));
+    let days_since_last = recent::get_days_since_last_recent().unwrap_or(None);
 
     Ok(RecentStatus {
         path: path.display().to_string(),
@@ -315,6 +364,9 @@ async fn check_recent_async() -> Result<RecentStatus, String> {
         is_empty,
         files_count,
         folder_size: utils::format_size(folder_size_bytes),
+        oldest_file,
+        newest_file,
+        days_since_last,
     })
 }
 
@@ -324,6 +376,7 @@ async fn check_sysmain_async() -> Result<SysMainStatus, String> {
     let prefetch_path = sysmain::get_prefetch_folder().map_err(|e| e.to_string())?;
     let prefetch_count = sysmain::get_prefetch_files_count().unwrap_or(0);
     let (oldest_file, newest_file) = sysmain::get_prefetch_file_dates().unwrap_or((None, None));
+    let days_since_last = sysmain::get_days_since_last_prefetch().unwrap_or(None);
 
     let is_running = service_status == sysmain::ServiceStatus::Running;
     let is_auto = startup_type == sysmain::StartupType::Automatic;
@@ -337,6 +390,7 @@ async fn check_sysmain_async() -> Result<SysMainStatus, String> {
         prefetch_count,
         oldest_file,
         newest_file,
+        days_since_last,
     })
 }
 
@@ -353,7 +407,7 @@ async fn enable_recent_async() -> Result<String, String> {
 
 async fn enable_sysmain_async() -> Result<String, String> {
     if !utils::is_admin() {
-        return Err("Требуются права администратора для включения службы SysMain!".to_string());
+        return Err("Требуются права администратора для включения службы Prefetch!".to_string());
     }
 
     let service_status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
@@ -362,9 +416,9 @@ async fn enable_sysmain_async() -> Result<String, String> {
     if service_status == sysmain::ServiceStatus::Running
         && startup_type == sysmain::StartupType::Automatic
     {
-        return Ok("Служба SysMain уже включена и запущена!".to_string());
+        return Ok("Служба Prefetch уже включена и запущена!".to_string());
     }
 
     sysmain::enable_sysmain().map_err(|e| e.to_string())?;
-    Ok("Служба SysMain успешно включена и запущена!".to_string())
+    Ok("Служба Prefetch успешно включена и запущена!".to_string())
 }
