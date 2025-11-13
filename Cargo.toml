@@ -1,0 +1,20 @@
+[package]
+name = "recent-enabler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+iced = { version = "0.13.1", features = ["tokio"] }
+tokio = { version = "1.0", features = ["full"] }
+
+[dependencies.windows]
+version = "0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Services",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+]
