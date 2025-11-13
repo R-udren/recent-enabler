@@ -109,20 +109,17 @@ pub fn is_recent_disabled() -> Result<bool> {
 
         let _ = RegCloseKey(hkey);
 
-        // 0 = отключено, 1 = включено
         let track_docs_disabled = if result.is_ok() && data_type == REG_DWORD {
             data == 0
         } else {
-            true // Если значение не найдено, считаем что отключено
+            true
         };
 
-        // Дополнительно учитываем Explorer\ShowRecent и Explorer\ShowFrequent
         let explorer_key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
 
         let mut show_recent_disabled = true;
         let mut show_frequent_disabled = true;
 
-        // ShowRecent
         let mut hkey_explorer = HKEY::default();
         let explorer_key_path_w: Vec<u16> =
             explorer_key_path.encode_utf16().chain(Some(0)).collect();
@@ -153,7 +150,6 @@ pub fn is_recent_disabled() -> Result<bool> {
                 show_recent_disabled = v == 0;
             }
 
-            // ShowFrequent
             let value_name_w: Vec<u16> = "ShowFrequent".encode_utf16().chain(Some(0)).collect();
             let mut v2: u32 = 0;
             let mut sz2 = std::mem::size_of::<u32>() as u32;
@@ -223,7 +219,6 @@ pub fn enable_recent() -> Result<()> {
             return Err(anyhow::anyhow!("Не удалось включить Recent"));
         }
 
-        // Также включаем отображение Recent и Frequent в Проводнике
         let explorer_key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
         let mut hkey_explorer = HKEY::default();
         let explorer_key_path_w: Vec<u16> =

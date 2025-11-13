@@ -1,188 +1,161 @@
-# Recent & SysMain Manager
+# Recent & Prefetch Manager
 
-**CLI утилита для проверки и управления записью недавних файлов (Recent) и службой SysMain в Windows.**
+**A GUI utility for Windows that monitors and manages Recent folder tracking and the SysMain (Prefetch) service.**
 
-## 🎯 Возможности
+## 🎯 Features
 
-### 📁 Recent (Недавние файлы)
+### 📁 Recent Folder Tracking
 
-- ✅ Проверка статуса записи недавних файлов
-- ✅ Просмотр количества файлов и размера папки Recent
-- ✅ Включение записи недавних файлов через реестр
-- ✅ Определение пустоты папки
+- Check if Recent files tracking is enabled in Windows Explorer
+- View count of `.lnk` files and timestamps (oldest/newest)
+- Enable tracking via registry keys:
+  - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_TrackDocs`
+  - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ShowRecent`
+  - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ShowFrequent`
+- Open Recent folder directly from the interface
 
-### ⚙️ SysMain (SuperFetch)
+### ⚙️ SysMain Service (Prefetch)
 
-- ✅ Проверка статуса службы SysMain
-- ✅ Просмотр типа запуска (автоматический/ручной/отключен)
-- ✅ Подсчет файлов в папке Prefetch
-- ✅ Включение службы и изменение типа запуска
+- Check SysMain service status (running/stopped)
+- View startup type (automatic/manual/disabled)
+- Count Prefetch `.pf` files in `C:\Windows\Prefetch`
+- Enable and start SysMain service (requires administrator privileges)
+- View oldest and newest Prefetch file timestamps
+- Open Prefetch folder directly from the interface
 
-## 🚀 Установка и запуск
+### 🔒 Permissions
 
-### Требования
+- Non-admin mode: View Recent status and file counts
+- Admin mode: Full control over SysMain service and Prefetch access
+- One-click "Restart as Administrator" button when elevated privileges are needed
+
+## 🚀 Installation
+
+### Requirements
 
 - Windows 10/11
-- Rust (для сборки из исходников)
+- Rust toolchain (for building from source)
 
-### Сборка
+### Simplest way
 
-```bash
+```powershell
+cargo run
+```
+
+### Build from Source
+
+```powershell
 cargo build --release
 ```
 
-### Запуск
+The executable will be located at `target\release\recent-enabler.exe`.
 
-#### CLI режим (рекомендуется)
+### Run
 
-```bash
-# Показать справку
-recent-enabler --help
+Simply launch the executable:
 
-# Проверить статус Recent
-recent-enabler check-recent
-
-# Проверить статус SysMain
-recent-enabler check-sysmain
-
-# Показать полный статус
-recent-enabler status
-
-# Включить Recent
-recent-enabler enable-recent
-
-# Включить SysMain (требуются права администратора)
-recent-enabler enable-sysmain
+```powershell
+.\target\release\recent-enabler.exe
 ```
 
-#### Интерактивный режим
+Or use the included batch file for administrator mode:
 
-Запустите без аргументов для интерактивного меню:
-
-```bash
-recent-enabler
+```powershell
+.\run_as_admin.bat
 ```
 
-#### Запуск с правами администратора
+## 📋 Usage
 
-Для полного функционала используйте:
+The application launches in GUI mode with a dark theme. The interface is divided into two main cards:
 
-```bash
-run_as_admin.bat
-```
+### Recent Card
 
-## 📋 Использование
+- Shows current tracking status (enabled/disabled)
+- Displays file count and timestamps
+- "Enable Recent Tracking" button appears when disabled
+- "Open Folder" button to open the Recent folder in Explorer
 
-### CLI команды
+### Prefetch Card
 
-```
-Usage: recent-enabler.exe [COMMAND]
+- Shows SysMain service status and startup type
+- Displays Prefetch file count and timestamps
+- "Enable Prefetch Service" button (requires admin)
+- "Open Folder" button to open the Prefetch folder in Explorer
 
-Commands:
-  check-recent    Проверить статус папки Recent
-  check-sysmain   Проверить статус службы SysMain
-  enable-recent   Включить запись в Recent
-  enable-sysmain  Включить службу SysMain
-  status          Показать статус всего
-  help            Print this message or the help of the given subcommand(s)
+### Buttons
 
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
-```
+- **Refresh**: Reload all status information
+- **Restart as Administrator**: Relaunch the app with elevated privileges
+- **Open Folder**: Open the respective folder in Windows Explorer
 
-### Интерактивное меню
+## 🔍 What It Checks
 
-```
-╔════════════════════════════════════════════════╗
-║    Recent & SysMain Manager v0.1.0 (CLI)     ║
-╚════════════════════════════════════════════════╝
+### Recent Tracking
 
-  1. 📁 Проверить статус Recent
-  2. ⚙️  Проверить статус SysMain
-  3. 📊 Показать статус всего
-  4. ✅ Включить Recent
-  5. ✅ Включить SysMain
-  0. ❌ Выход
+1. **Folder Path**: `%APPDATA%\Microsoft\Windows\Recent`
+2. **Registry Keys**:
+   - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_TrackDocs`
+   - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ShowRecent`
+   - `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ShowFrequent`
+3. **File Count**: Number of `.lnk` files
+4. **Timestamps**: Oldest and newest file modification times
 
-Выберите действие (0-5):
-```
+### SysMain Service
 
-## 🔍 Что проверяется
+1. **Service Status**: Running, Stopped, Paused, or Unknown
+2. **Startup Type**: Automatic, Manual, Disabled, or Unknown
+3. **Prefetch Folder**: `C:\Windows\Prefetch`
+4. **File Count**: Number of `.pf` files
+5. **Timestamps**: Oldest and newest Prefetch file modification times
 
-### Recent
+## ⚠️ Important Notes
 
-1. **Путь к папке**: `%APPDATA%\Microsoft\Windows\Recent`
-2. **Статус записи**: Проверка ключа реестра `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\NoRecentDocsHistory`
-3. **Содержимое**: Количество файлов .lnk и общий размер папки
+- **Administrator Privileges** are required for:
+  - Starting/stopping the SysMain service
+  - Changing service startup type
+  - Reading Prefetch folder contents (on some systems)
+- **Windows Only**: This utility is designed specifically for Windows 10/11
+- Error messages are displayed at the top of the window when operations fail
 
-### SysMain
+## 🏗️ Architecture
 
-1. **Служба**: Статус службы SysMain (запущена/остановлена)
-2. **Тип запуска**: Автоматический/Ручной/Отключен
-3. **Prefetch**: Количество файлов в `%SystemRoot%\Prefetch`
-
-## 📊 Примеры вывода
-
-### Проверка Recent
-
-```
-╔══════════════════════════════════════════╗
-║          📁 Статус Recent               ║
-╚══════════════════════════════════════════╝
-
-  Путь: C:\Users\User\AppData\Roaming\Microsoft\Windows\Recent
-  Запись: ✓ Включена
-  Папка: ✓ Содержит файлы
-  Количество файлов: 83
-  Размер папки: 42.42 KB
-```
-
-### Проверка SysMain
-
-```
-╔══════════════════════════════════════════╗
-║         ⚙️  Статус SysMain               ║
-╚══════════════════════════════════════════╝
-
-  Статус службы: ✓ Запущена
-  Тип запуска: ✓ Автоматический
-  Папка Prefetch: C:\Windows\Prefetch
-  Файлов .pf: 1234
-```
-
-## ⚠️ Важно
-
-- Некоторые функции требуют **прав администратора**:
-
-  - Включение службы SysMain
-  - Изменение типа запуска службы
-  - Доступ к папке Prefetch
-
-- Программа работает **только на Windows**
-
-## 🏗️ Архитектура
-
-Проект организован по модульному принципу:
+The project is organized into modules:
 
 ```
 src/
-├── main.rs      # Точка входа, CLI, интерактивное меню
-├── recent.rs    # Логика работы с Recent
-├── sysmain.rs   # Логика работы с SysMain
-└── utils.rs     # Вспомогательные функции
+├── main.rs      Entry point and window configuration
+├── app.rs       Application state, messages, and logic
+├── ui.rs        Reusable UI components and styling
+├── recent.rs    Recent folder operations and registry handling
+├── sysmain.rs   SysMain service control and Prefetch operations
+└── utils.rs     Utility functions (admin detection)
 ```
 
-### Библиотеки
+## 🔧 Technical Details
 
-- **clap** - современный CLI парсер с derive API
-- **windows** - официальная библиотека Windows API
-- **anyhow** - удобная обработка ошибок
+### Registry Operations
 
-## 📝 Лицензия
+The utility manipulates the following Windows Registry keys:
 
-MIT
+- `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_TrackDocs`
 
-## 👤 Автор
+  - `0` = Tracking disabled
+  - `1` = Tracking enabled
 
-Создано с использованием лучших практик Rust и чистых функций.
+- `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ShowRecent`
+
+  - `0` = Hide recent items in Explorer
+  - `1` = Show recent items
+
+- `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\ShowFrequent`
+  - `0` = Hide frequent items in Explorer
+  - `1` = Show frequent items
+
+### Service Management
+
+Uses Windows Service Control Manager API to:
+
+- Query service status
+- Read startup configuration
+- Modify startup type
+- Start/stop the SysMain service
