@@ -35,6 +35,7 @@ pub struct SysMainStatus {
     pub prefetch_count: usize,
     pub oldest_time: Option<SystemTime>,
     pub newest_time: Option<SystemTime>,
+    pub prefetch_error: Option<String>,
 }
 
 #[derive(Default)]
@@ -311,17 +312,46 @@ fn view_sysmain_card(status: Option<&SysMainStatus>, is_admin: bool) -> Element<
             )
         ),
         ui::info_row("Тип запуска:", ui::value_text(&status.startup_type)),
-        ui::info_row("Файлов (.pf):", ui::value_text(status.prefetch_count)),
-        ui::file_info_rows(&status.oldest_time, &status.newest_time),
-        ui::info_row(
-            "Путь:",
-            text(&status.prefetch_path)
-                .size(12)
-                .color(iced::Color::from_rgb(0.6, 0.6, 0.6))
-        ),
     ]
     .spacing(10)
     .padding(22);
+
+    // Show error message if prefetch folder is inaccessible
+    if let Some(ref error) = status.prefetch_error {
+        content = content.push(
+            container(
+                text(error)
+                    .size(13)
+                    .color(iced::Color::from_rgb(1.0, 0.7, 0.3)),
+            )
+            .padding(10)
+            .style(|_| container::Style {
+                background: Some(iced::Background::Color(iced::Color::from_rgb(
+                    0.25, 0.2, 0.15,
+                ))),
+                border: iced::Border {
+                    color: iced::Color::from_rgb(0.6, 0.5, 0.3),
+                    width: 1.0,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            }),
+        );
+    } else {
+        content = content
+            .push(ui::info_row(
+                "Файлов (.pf):",
+                ui::value_text(status.prefetch_count),
+            ))
+            .push(ui::file_info_rows(&status.oldest_time, &status.newest_time));
+    }
+
+    content = content.push(ui::info_row(
+        "Путь:",
+        text(&status.prefetch_path)
+            .size(12)
+            .color(iced::Color::from_rgb(0.6, 0.6, 0.6)),
+    ));
 
     if !status.is_running || !status.is_auto {
         content = content.push(Space::with_height(15)).push(if is_admin {
@@ -365,16 +395,23 @@ async fn check_sysmain_async() -> Result<SysMainStatus, String> {
     let service_status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
     let startup_type = sysmain::get_sysmain_startup_type().map_err(|e| e.to_string())?;
     let prefetch_path = sysmain::get_prefetch_folder().map_err(|e| e.to_string())?;
-    let info = sysmain::get_prefetch_info().map_err(|e| e.to_string())?;
+
+    // Get prefetch info but don't fail the entire check if it's inaccessible
+    let (prefetch_count, oldest_time, newest_time, prefetch_error) =
+        match sysmain::get_prefetch_info() {
+            Ok(info) => (info.pf_count, info.oldest_time, info.newest_time, None),
+            Err(e) => (0, None, None, Some(e.to_string())),
+        };
 
     Ok(SysMainStatus {
         is_running: service_status == sysmain::ServiceStatus::Running,
         is_auto: startup_type == sysmain::StartupType::Automatic,
         startup_type: startup_type.as_str().to_string(),
         prefetch_path: prefetch_path.display().to_string(),
-        prefetch_count: info.pf_count,
-        oldest_time: info.oldest_time,
-        newest_time: info.newest_time,
+        prefetch_count,
+        oldest_time,
+        newest_time,
+        prefetch_error,
     })
 }
 

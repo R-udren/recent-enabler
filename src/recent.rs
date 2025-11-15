@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use windows::core::PCWSTR;
-use windows::Win32::System::Registry::*;
+use winreg::enums::*;
+use winreg::RegKey;
 
 pub struct RecentInfo {
     pub lnk_count: usize,
@@ -15,6 +15,44 @@ pub fn get_recent_folder() -> Result<PathBuf> {
         .join("Microsoft")
         .join("Windows")
         .join("Recent"))
+}
+
+fn count_lnk_files(entries: &[std::fs::DirEntry]) -> usize {
+    entries
+        .iter()
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("lnk"))
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+fn collect_file_dates(entries: &[std::fs::DirEntry]) -> Vec<std::time::SystemTime> {
+    entries
+        .iter()
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("lnk"))
+                .unwrap_or(false)
+        })
+        .filter_map(|e| e.metadata().ok())
+        .filter_map(|m| m.modified().ok())
+        .collect()
+}
+
+fn get_oldest_newest(
+    mut dates: Vec<std::time::SystemTime>,
+) -> (Option<std::time::SystemTime>, Option<std::time::SystemTime>) {
+    if dates.is_empty() {
+        return (None, None);
+    }
+    dates.sort();
+    (dates.first().copied(), dates.last().copied())
 }
 
 pub fn get_recent_info() -> Result<RecentInfo> {
@@ -33,228 +71,99 @@ pub fn get_recent_info() -> Result<RecentInfo> {
         .filter_map(|e| e.ok())
         .collect();
 
-    let lnk_count = entries
-        .iter()
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("lnk"))
-                .unwrap_or(false)
-        })
-        .count();
-
-    let mut dates: Vec<std::time::SystemTime> = entries
-        .iter()
-        .filter(|e| {
-            e.path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("lnk"))
-                .unwrap_or(false)
-        })
-        .filter_map(|e| e.metadata().ok())
-        .filter_map(|m| m.modified().ok())
-        .collect();
-
-    if dates.is_empty() {
-        return Ok(RecentInfo {
-            lnk_count,
-            oldest_time: None,
-            newest_time: None,
-        });
-    }
-
-    dates.sort();
+    let lnk_count = count_lnk_files(&entries);
+    let dates = collect_file_dates(&entries);
+    let (oldest_time, newest_time) = get_oldest_newest(dates);
 
     Ok(RecentInfo {
         lnk_count,
-        oldest_time: dates.first().copied(),
-        newest_time: dates.last().copied(),
+        oldest_time,
+        newest_time,
     })
 }
+
+fn read_registry_dword(key: &RegKey, value_name: &str) -> Option<u32> {
+    key.get_value::<u32, _>(value_name).ok()
+}
+
+fn check_track_docs_disabled() -> Result<bool> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
+
+    let key = match hkcu.open_subkey(key_path) {
+        Ok(k) => k,
+        Err(_) => return Ok(true), // If key doesn't exist, assume disabled
+    };
+
+    Ok(read_registry_dword(&key, "Start_TrackDocs").unwrap_or(0) == 0)
+}
+
+fn check_show_recent_disabled() -> Result<bool> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
+
+    let key = match hkcu.open_subkey(key_path) {
+        Ok(k) => k,
+        Err(_) => return Ok(false), // If key doesn't exist, assume enabled
+    };
+
+    Ok(read_registry_dword(&key, "ShowRecent").unwrap_or(1) == 0)
+}
+
+fn check_show_frequent_disabled() -> Result<bool> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
+
+    let key = match hkcu.open_subkey(key_path) {
+        Ok(k) => k,
+        Err(_) => return Ok(false), // If key doesn't exist, assume enabled
+    };
+
+    Ok(read_registry_dword(&key, "ShowFrequent").unwrap_or(1) == 0)
+}
+
 pub fn is_recent_disabled() -> Result<bool> {
-    unsafe {
-        let key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
-        let value_name = "Start_TrackDocs";
+    let track_docs = check_track_docs_disabled()?;
+    let show_recent = check_show_recent_disabled()?;
+    let show_frequent = check_show_frequent_disabled()?;
 
-        let mut hkey = HKEY::default();
-        let key_path_wide: Vec<u16> = key_path.encode_utf16().chain(Some(0)).collect();
+    Ok(track_docs || show_recent || show_frequent)
+}
 
-        let result = RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path_wide.as_ptr()),
-            Some(0),
-            KEY_READ,
-            &mut hkey,
-        );
+fn set_registry_dword(key: &RegKey, value_name: &str, value: u32) -> Result<()> {
+    key.set_value(value_name, &value)
+        .with_context(|| format!("Не удалось записать значение {}", value_name))
+}
 
-        if result.is_err() {
-            return Ok(true); // Если ключ не существует, считаем что отключено
-        }
+fn enable_track_docs() -> Result<()> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
 
-        let value_name_wide: Vec<u16> = value_name.encode_utf16().chain(Some(0)).collect();
-        let mut data: u32 = 0;
-        let mut data_size = std::mem::size_of::<u32>() as u32;
-        let mut data_type = REG_NONE;
+    let (key, _) = hkcu
+        .create_subkey(key_path)
+        .context("Не удалось открыть ключ реестра Advanced")?;
 
-        let result = RegQueryValueExW(
-            hkey,
-            PCWSTR(value_name_wide.as_ptr()),
-            None,
-            Some(&mut data_type),
-            Some(std::ptr::addr_of_mut!(data) as *mut u8),
-            Some(&mut data_size),
-        );
+    set_registry_dword(&key, "Start_TrackDocs", 1)
+}
 
-        let _ = RegCloseKey(hkey);
+fn enable_show_recent_frequent() -> Result<()> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
 
-        let track_docs_disabled = if result.is_ok() && data_type == REG_DWORD {
-            data == 0
-        } else {
-            true
-        };
+    let (key, _) = hkcu
+        .create_subkey(key_path)
+        .context("Не удалось открыть ключ реестра Explorer")?;
 
-        let explorer_key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
+    set_registry_dword(&key, "ShowRecent", 1)?;
+    set_registry_dword(&key, "ShowFrequent", 1)?;
 
-        let mut show_recent_disabled = true;
-        let mut show_frequent_disabled = true;
-
-        let mut hkey_explorer = HKEY::default();
-        let explorer_key_path_w: Vec<u16> =
-            explorer_key_path.encode_utf16().chain(Some(0)).collect();
-        if RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(explorer_key_path_w.as_ptr()),
-            Some(0),
-            KEY_READ,
-            &mut hkey_explorer,
-        )
-        .is_ok()
-        {
-            let value_name_w: Vec<u16> = "ShowRecent".encode_utf16().chain(Some(0)).collect();
-            let mut v: u32 = 0;
-            let mut sz = std::mem::size_of::<u32>() as u32;
-            let mut ty = REG_NONE;
-            if RegQueryValueExW(
-                hkey_explorer,
-                PCWSTR(value_name_w.as_ptr()),
-                None,
-                Some(&mut ty),
-                Some(std::ptr::addr_of_mut!(v) as *mut u8),
-                Some(&mut sz),
-            )
-            .is_ok()
-                && ty == REG_DWORD
-            {
-                show_recent_disabled = v == 0;
-            }
-
-            let value_name_w: Vec<u16> = "ShowFrequent".encode_utf16().chain(Some(0)).collect();
-            let mut v2: u32 = 0;
-            let mut sz2 = std::mem::size_of::<u32>() as u32;
-            let mut ty2 = REG_NONE;
-            if RegQueryValueExW(
-                hkey_explorer,
-                PCWSTR(value_name_w.as_ptr()),
-                None,
-                Some(&mut ty2),
-                Some(std::ptr::addr_of_mut!(v2) as *mut u8),
-                Some(&mut sz2),
-            )
-            .is_ok()
-                && ty2 == REG_DWORD
-            {
-                show_frequent_disabled = v2 == 0;
-            }
-
-            let _ = RegCloseKey(hkey_explorer);
-        }
-
-        Ok(track_docs_disabled || show_recent_disabled || show_frequent_disabled)
-    }
+    Ok(())
 }
 
 pub fn enable_recent() -> Result<()> {
-    unsafe {
-        let key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
-        let value_name = "Start_TrackDocs";
-
-        let mut hkey = HKEY::default();
-        let key_path_wide: Vec<u16> = key_path.encode_utf16().chain(Some(0)).collect();
-
-        let result = RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path_wide.as_ptr()),
-            Some(0),
-            None,
-            REG_OPTION_NON_VOLATILE,
-            KEY_WRITE,
-            None,
-            &mut hkey,
-            None,
-        );
-
-        if result.is_err() {
-            return Err(anyhow::anyhow!("Не удалось открыть ключ реестра"));
-        }
-
-        let value_name_wide: Vec<u16> = value_name.encode_utf16().chain(Some(0)).collect();
-        let data: u32 = 1; // 1 = включено
-
-        let result = RegSetValueExW(
-            hkey,
-            PCWSTR(value_name_wide.as_ptr()),
-            Some(0),
-            REG_DWORD,
-            Some(std::slice::from_raw_parts(
-                std::ptr::addr_of!(data) as *const u8,
-                std::mem::size_of::<u32>(),
-            )),
-        );
-
-        let _ = RegCloseKey(hkey);
-
-        if result.is_err() {
-            return Err(anyhow::anyhow!("Не удалось включить Recent"));
-        }
-
-        let explorer_key_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer";
-        let mut hkey_explorer = HKEY::default();
-        let explorer_key_path_w: Vec<u16> =
-            explorer_key_path.encode_utf16().chain(Some(0)).collect();
-        let _ = RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(explorer_key_path_w.as_ptr()),
-            Some(0),
-            None,
-            REG_OPTION_NON_VOLATILE,
-            KEY_WRITE,
-            None,
-            &mut hkey_explorer,
-            None,
-        );
-
-        if !hkey_explorer.is_invalid() {
-            let one: u32 = 1;
-            for name in ["ShowRecent", "ShowFrequent"] {
-                let name_w: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
-                let _ = RegSetValueExW(
-                    hkey_explorer,
-                    PCWSTR(name_w.as_ptr()),
-                    Some(0),
-                    REG_DWORD,
-                    Some(std::slice::from_raw_parts(
-                        std::ptr::addr_of!(one) as *const u8,
-                        std::mem::size_of::<u32>(),
-                    )),
-                );
-            }
-            let _ = RegCloseKey(hkey_explorer);
-        }
-
-        Ok(())
-    }
+    enable_track_docs()?;
+    enable_show_recent_frequent()?;
+    Ok(())
 }
 
 #[cfg(test)]
