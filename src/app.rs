@@ -1,4 +1,4 @@
-use crate::{recent, sysmain, ui, utils};
+use crate::{recent, sysmain, system_restore, ui, utils};
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Element, Fill, Task};
 use std::time::SystemTime;
@@ -7,11 +7,14 @@ use std::time::SystemTime;
 pub enum Message {
     EnableRecent,
     EnableSysMain,
+    EnableSystemRestore,
     Refresh,
     RecentChecked(Result<RecentStatus, String>),
     SysMainChecked(Result<SysMainStatus, String>),
+    SystemRestoreChecked(Result<SystemRestoreStatus, String>),
     RecentEnabled(Result<String, String>),
     SysMainEnabled(Result<String, String>),
+    SystemRestoreEnabled(Result<String, String>),
     OpenRecentFolder,
     OpenPrefetchFolder,
     RestartAsAdmin,
@@ -38,10 +41,16 @@ pub struct SysMainStatus {
     pub prefetch_error: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SystemRestoreStatus {
+    pub is_enabled: bool,
+}
+
 #[derive(Default)]
 pub struct State {
     recent_status: Option<RecentStatus>,
     sysmain_status: Option<SysMainStatus>,
+    system_restore_status: Option<SystemRestoreStatus>,
     status_message: String,
     is_admin: bool,
 }
@@ -61,6 +70,7 @@ pub fn init() -> (State, Task<Message>) {
         Task::batch(vec![
             Task::perform(check_recent_async(), Message::RecentChecked),
             Task::perform(check_sysmain_async(), Message::SysMainChecked),
+            Task::perform(check_system_restore_async(), Message::SystemRestoreChecked),
         ]),
     )
 }
@@ -70,9 +80,13 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Refresh => Task::batch(vec![
             Task::perform(check_recent_async(), Message::RecentChecked),
             Task::perform(check_sysmain_async(), Message::SysMainChecked),
+            Task::perform(check_system_restore_async(), Message::SystemRestoreChecked),
         ]),
         Message::EnableRecent => Task::perform(enable_recent_async(), Message::RecentEnabled),
         Message::EnableSysMain => Task::perform(enable_sysmain_async(), Message::SysMainEnabled),
+        Message::EnableSystemRestore => {
+            Task::perform(enable_system_restore_async(), Message::SystemRestoreEnabled)
+        }
         Message::RecentChecked(result) => {
             match result {
                 Ok(status) => {
@@ -93,6 +107,16 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::SystemRestoreChecked(result) => {
+            match result {
+                Ok(status) => {
+                    state.system_restore_status = Some(status);
+                    state.status_message.clear();
+                }
+                Err(e) => state.status_message = format!("Ошибка System Restore: {}", e),
+            }
+            Task::none()
+        }
         Message::RecentEnabled(result) => match result {
             Ok(msg) => {
                 state.status_message = msg;
@@ -110,6 +134,16 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                     Task::perform(check_recent_async(), Message::RecentChecked),
                     Task::perform(check_sysmain_async(), Message::SysMainChecked),
                 ])
+            }
+            Err(e) => {
+                state.status_message = format!("Ошибка: {}", e);
+                Task::none()
+            }
+        },
+        Message::SystemRestoreEnabled(result) => match result {
+            Ok(msg) => {
+                state.status_message = msg;
+                Task::perform(check_system_restore_async(), Message::SystemRestoreChecked)
             }
             Err(e) => {
                 state.status_message = format!("Ошибка: {}", e);
@@ -167,6 +201,11 @@ pub fn view(state: &State) -> Element<'_, Message> {
         .push(Space::with_height(15))
         .push(view_sysmain_card(
             state.sysmain_status.as_ref(),
+            state.is_admin,
+        ))
+        .push(Space::with_height(15))
+        .push(view_system_restore_card(
+            state.system_restore_status.as_ref(),
             state.is_admin,
         ));
 
@@ -377,6 +416,72 @@ fn view_sysmain_card(status: Option<&SysMainStatus>, is_admin: bool) -> Element<
         .into()
 }
 
+fn view_system_restore_card(
+    status: Option<&SystemRestoreStatus>,
+    is_admin: bool,
+) -> Element<'_, Message> {
+    let Some(status) = status else {
+        return container(
+            text("Загрузка статуса System Restore...")
+                .size(16)
+                .width(Fill),
+        )
+        .padding(20)
+        .style(container::rounded_box)
+        .width(Fill)
+        .into();
+    };
+
+    let mut content = column![
+        text("System Restore").size(22),
+        ui::info_row(
+            "Статус на диске C:",
+            ui::status_text(
+                if status.is_enabled {
+                    "ВКЛЮЧЕНА"
+                } else {
+                    "ОТКЛЮЧЕНА"
+                },
+                status.is_enabled
+            )
+        ),
+    ]
+    .spacing(10)
+    .padding(22);
+
+    // Show enable button or admin warning if not enabled
+    if !status.is_enabled {
+        content = content.push(Space::with_height(15));
+
+        if is_admin {
+            content = content.push(
+                container(
+                    button("Включить System Restore на C:")
+                        .on_press(Message::EnableSystemRestore)
+                        .padding(10),
+                )
+                .center_x(Fill),
+            );
+        } else {
+            content = content.push(ui::warning_box(
+                "Требуются права администратора",
+                Message::RestartAsAdmin,
+            ));
+        }
+    }
+
+    container(content)
+        .width(Fill)
+        .style(|theme| {
+            ui::card_style(
+                theme,
+                iced::Color::from_rgb(0.2, 0.15, 0.25),
+                iced::Color::from_rgb(0.5, 0.3, 0.5),
+            )
+        })
+        .into()
+}
+
 async fn check_recent_async() -> Result<RecentStatus, String> {
     let path = recent::get_recent_folder().map_err(|e| e.to_string())?;
     let is_disabled = recent::is_recent_disabled().map_err(|e| e.to_string())?;
@@ -437,4 +542,19 @@ async fn enable_sysmain_async() -> Result<String, String> {
 
     sysmain::enable_sysmain().map_err(|e| e.to_string())?;
     Ok("Служба Prefetch успешно включена и запущена!".to_string())
+}
+
+async fn check_system_restore_async() -> Result<SystemRestoreStatus, String> {
+    let is_enabled = system_restore::get_system_restore_info().map_err(|e| e.to_string())?;
+
+    Ok(SystemRestoreStatus { is_enabled })
+}
+
+async fn enable_system_restore_async() -> Result<String, String> {
+    if !utils::is_admin() {
+        return Err("Требуются права администратора для включения System Restore!".to_string());
+    }
+
+    system_restore::enable_system_restore().map_err(|e| e.to_string())?;
+    Ok("System Restore успешно включена на диске C:!".to_string())
 }
