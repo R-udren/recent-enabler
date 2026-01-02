@@ -6,19 +6,19 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Registry error: {0}")]
     Registry(String),
-    
+
     #[error("Windows service error: {0}")]
     Service(String),
-    
+
     #[error("File system error: {0}")]
     FileSystem(String),
-    
+
     #[error("PowerShell error: {0}")]
     PowerShell(String),
-    
+
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
-    
+
     #[error("{0}")]
     Other(String),
 }

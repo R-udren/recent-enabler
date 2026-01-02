@@ -84,20 +84,35 @@ impl App {
                 },
                 Message::LoadedRecent,
             ),
-            Message::EnablePrefetch => Task::perform(
-                async {
-                    services::prefetch::enable().ok();
-                    services::prefetch::get_info().map_err(|e: crate::domain::AppError| e.to_string())
-                },
-                Message::LoadedPrefetch,
-            ),
-            Message::EnableSystemRestore => Task::perform(
-                async {
-                    services::system_restore::enable("C:\\").ok();
-                    services::system_restore::get_info().map_err(|e: crate::domain::AppError| e.to_string())
-                },
-                Message::LoadedSystemRestore,
-            ),
+            Message::EnablePrefetch => {
+                if !self.is_admin {
+                    // Ask to restart as admin so the action can run elevated
+                    let _ = crate::repositories::elevation::run_as_admin();
+                    std::process::exit(0);
+                }
+                Task::perform(
+                    async {
+                        services::prefetch::enable().ok();
+                        services::prefetch::get_info().map_err(|e: crate::domain::AppError| e.to_string())
+                    },
+                    Message::LoadedPrefetch,
+                )
+            },
+
+            Message::EnableSystemRestore => {
+                if !self.is_admin {
+                    let _ = crate::repositories::elevation::run_as_admin();
+                    std::process::exit(0);
+                }
+                Task::perform(
+                    async {
+                        services::system_restore::enable("C:\\").ok();
+                        services::system_restore::get_info().map_err(|e: crate::domain::AppError| e.to_string())
+                    },
+                    Message::LoadedSystemRestore,
+                )
+            },
+
             Message::OpenRecentFolder => {
                 let _ = Command::new("explorer")
                     .arg("%APPDATA%\\Microsoft\\Windows\\Recent")
@@ -111,11 +126,24 @@ impl App {
                 Task::none()
             }
             Message::RestartAsAdmin => {
-                let _ = Command::new("powershell")
-                    .arg("-Command")
-                    .arg("Start-Process -Verb RunAs -FilePath (Get-Process -Id $PID).Path")
-                    .spawn();
-                std::process::exit(0);
+                // Try proper ShellExecute runas first
+                match crate::repositories::elevation::run_as_admin() {
+                    Ok(()) => {
+                        // Relaunch requested; exit current process
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        // Fallback: try PowerShell Start-Process as a less-reliable attempt
+                        let _ = Command::new("powershell")
+                            .arg("-Command")
+                            .arg("Start-Process -Verb RunAs -FilePath (Get-Process -Id $PID).Path")
+                            .spawn();
+                        // optionally log the error to stderr for debugging
+                        eprintln!("Elevation failed: {}", e.to_user_string());
+                        // still exit, since the fallback may have triggered an elevation prompt
+                        std::process::exit(0);
+                    }
+                }
             }
         }
     }
