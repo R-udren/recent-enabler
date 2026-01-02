@@ -2,20 +2,25 @@
 
 mod app;
 mod domain;
-mod recent;
-mod sysmain;
-mod system_restore;
+mod repositories;
+mod services;
 mod ui;
-mod utils;
 
-use iced::Theme;
+use iced::{window, Size, Theme};
 
 fn main() -> iced::Result {
-    iced::application("Recent & Prefetch", app::update, app::view)
-        .theme(|_| Theme::Dark)
-        .window(iced::window::Settings {
-            size: iced::Size::new(600.0, 800.0),
-            ..Default::default()
-        })
-        .run_with(app::init)
+    let is_admin = unsafe { windows::Win32::UI::Shell::IsUserAnAdmin().as_bool() };
+
+    iced::application(
+        move || app::App::new(is_admin),
+        app::App::update,
+        app::App::view,
+    )
+    .title(|_: &app::App| "Recent Files Enabler".to_string())
+    .theme(|_: &app::App| Theme::Dark)
+    .window(window::Settings {
+        size: Size::new(600.0, 700.0),
+        ..Default::default()
+    })
+    .run()
 }
