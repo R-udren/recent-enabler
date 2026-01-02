@@ -21,6 +21,14 @@ pub fn view<M: Clone + 'static>(
         .into();
     };
 
+    fn fmt_time(t: Option<std::time::SystemTime>) -> String {
+        t.map(|s| {
+            let dt: chrono::DateTime<chrono::Local> = s.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| "N/A".into())
+    }
+
     let mut content = column![
         components::card_header("Prefetch", on_open),
         components::info_row(
@@ -35,6 +43,8 @@ pub fn view<M: Clone + 'static>(
             )
         ),
         components::info_row("Files:", text(info.files.count.to_string()).size(16)),
+        components::info_row("Oldest:", text(fmt_time(info.files.oldest)).size(14)),
+        components::info_row("Newest:", text(fmt_time(info.files.newest)).size(14)),
     ]
     .spacing(10);
 

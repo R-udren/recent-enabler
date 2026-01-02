@@ -2,7 +2,7 @@
 
 use crate::domain::{PrefetchInfo, RecentInfo, SystemRestoreInfo};
 use crate::services;
-use iced::widget::{column, scrollable, Space};
+use iced::widget::{button, column, row, scrollable, text, Space};
 use iced::{Center, Element, Fill, Task};
 use std::process::Command;
 
@@ -11,6 +11,7 @@ pub enum Message {
     LoadedRecent(Result<RecentInfo, String>),
     LoadedPrefetch(Result<PrefetchInfo, String>),
     LoadedSystemRestore(Result<SystemRestoreInfo, String>),
+    Refresh,
     EnableRecent,
     EnablePrefetch,
     EnableSystemRestore,
@@ -37,15 +38,23 @@ impl App {
 
         let tasks = Task::batch([
             Task::perform(
-                async { services::recent::get_info().map_err(|e: crate::domain::AppError| e.to_string()) },
-                Message::LoadedRecent
+                async {
+                    services::recent::get_info().map_err(|e: crate::domain::AppError| e.to_string())
+                },
+                Message::LoadedRecent,
             ),
             Task::perform(
-                async { services::prefetch::get_info().map_err(|e: crate::domain::AppError| e.to_string()) },
-                Message::LoadedPrefetch
+                async {
+                    services::prefetch::get_info()
+                        .map_err(|e: crate::domain::AppError| e.to_string())
+                },
+                Message::LoadedPrefetch,
             ),
             Task::perform(
-                async { services::system_restore::get_info().map_err(|e: crate::domain::AppError| e.to_string()) },
+                async {
+                    services::system_restore::get_info()
+                        .map_err(|e: crate::domain::AppError| e.to_string())
+                },
                 Message::LoadedSystemRestore,
             ),
         ]);
@@ -93,11 +102,12 @@ impl App {
                 Task::perform(
                     async {
                         services::prefetch::enable().ok();
-                        services::prefetch::get_info().map_err(|e: crate::domain::AppError| e.to_string())
+                        services::prefetch::get_info()
+                            .map_err(|e: crate::domain::AppError| e.to_string())
                     },
                     Message::LoadedPrefetch,
                 )
-            },
+            }
 
             Message::EnableSystemRestore => {
                 if !self.is_admin {
@@ -107,11 +117,12 @@ impl App {
                 Task::perform(
                     async {
                         services::system_restore::enable("C:\\").ok();
-                        services::system_restore::get_info().map_err(|e: crate::domain::AppError| e.to_string())
+                        services::system_restore::get_info()
+                            .map_err(|e: crate::domain::AppError| e.to_string())
                     },
                     Message::LoadedSystemRestore,
                 )
-            },
+            }
 
             Message::OpenRecentFolder => {
                 let _ = Command::new("explorer")
@@ -145,13 +156,42 @@ impl App {
                     }
                 }
             }
+            Message::Refresh => Task::batch([
+                Task::perform(
+                    async {
+                        services::recent::get_info()
+                            .map_err(|e: crate::domain::AppError| e.to_string())
+                    },
+                    Message::LoadedRecent,
+                ),
+                Task::perform(
+                    async {
+                        services::prefetch::get_info()
+                            .map_err(|e: crate::domain::AppError| e.to_string())
+                    },
+                    Message::LoadedPrefetch,
+                ),
+                Task::perform(
+                    async {
+                        services::system_restore::get_info()
+                            .map_err(|e: crate::domain::AppError| e.to_string())
+                    },
+                    Message::LoadedSystemRestore,
+                ),
+            ]),
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         scrollable(
             column![
-                Space::new().height(20),
+                row![
+                    text(self.title()).size(24),
+                    iced::widget::Space::new().width(Fill),
+                    button("Refresh").on_press(Message::Refresh),
+                ]
+                .align_y(iced::Alignment::Center),
+                Space::new().height(12),
                 crate::ui::recent_view::view(
                     self.recent.as_ref(),
                     Message::EnableRecent,
