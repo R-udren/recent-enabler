@@ -61,7 +61,7 @@ pub fn view<M: Clone + 'static>(
         );
     }
 
-    if !is_ok && info.status != RecentStatus::PolicyBlocked {
+    if !is_ok {
         content = content.push(button("Enable").on_press(on_enable).padding(10));
     }
 

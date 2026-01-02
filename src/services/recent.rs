@@ -62,13 +62,20 @@ fn build_checks() -> Vec<RegistryCheck> {
             severity: CheckSeverity::Critical,
             is_policy: true,
         },
+        RegistryCheck {
+            name: "Menu Policy".into(),
+            key: POLICY_KEY.into(),
+            value: "NoRecentDocsMenu".into(),
+            expected: 0,
+            actual: None,
+            severity: CheckSeverity::Critical,
+            is_policy: true,
+        },
     ]
 }
 
 fn check_status(checks: &[RegistryCheck]) -> RecentStatus {
-    let policy_blocked = checks
-        .iter()
-        .any(|c| c.is_policy && !c.is_ok());
+    let policy_blocked = checks.iter().any(|c| c.is_policy && !c.is_ok());
 
     if policy_blocked {
         return RecentStatus::PolicyBlocked;
@@ -97,7 +104,17 @@ pub fn get_info() -> Result<RecentInfo> {
 
     let mut checks = build_checks();
     for check in &mut checks {
-        check.actual = registry::read_hkcu(&check.key, &check.value);
+        // Check HKCU first
+        let mut val = registry::read_hkcu(&check.key, &check.value);
+
+        // For policies, also check HKLM if HKCU is OK or missing
+        if check.is_policy && (val.is_none() || val == Some(check.expected)) {
+            if let Some(hklm_val) = registry::read_hklm(&check.key, &check.value) {
+                val = Some(hklm_val);
+            }
+        }
+
+        check.actual = val;
     }
 
     let status = check_status(&checks);
@@ -113,15 +130,39 @@ pub fn get_info() -> Result<RecentInfo> {
 pub fn enable() -> Result<OperationResult> {
     let checks = build_checks();
     let mut fixed = 0;
+    let mut needs_admin = false;
 
     for check in checks {
         if check.is_policy {
+            let mut policy_fixed = false;
+            // Try to fix in HKCU
+            if registry::write_hkcu(&check.key, &check.value, check.expected).is_ok() {
+                policy_fixed = true;
+            }
+
+            // Also try to fix in HKLM (requires admin)
+            if registry::write_hklm(&check.key, &check.value, check.expected).is_err() {
+                needs_admin = true;
+            } else {
+                policy_fixed = true;
+            }
+
+            if policy_fixed {
+                fixed += 1;
+            }
             continue;
         }
+
         if registry::write_hkcu(&check.key, &check.value, check.expected).is_ok() {
             fixed += 1;
         }
     }
 
-    Ok(OperationResult::success(format!("Enabled {} settings", fixed)))
+    let mut res = OperationResult::success(format!("Enabled {} settings", fixed));
+    if needs_admin {
+        res.message
+            .push_str(" (some policy settings require admin)");
+        res = res.requires_admin();
+    }
+    Ok(res)
 }
