@@ -49,6 +49,15 @@ pub fn status_text(value: &str, is_active: bool) -> text::Text<'_> {
     })
 }
 
+/// Status text that takes ownership of the string (for use with computed values)
+pub fn status_text_owned(value: &'static str, is_active: bool) -> text::Text<'static> {
+    text(value).size(18).color(if is_active {
+        Color::from_rgb(0.4, 1.0, 0.4)
+    } else {
+        Color::from_rgb(1.0, 0.4, 0.4)
+    })
+}
+
 pub fn info_row<'a, M: 'a>(
     label: &'a str,
     value: impl Into<Element<'a, M>>,
