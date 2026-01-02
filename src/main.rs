@@ -9,6 +9,9 @@ mod ui;
 use iced::{window, Size, Theme};
 
 fn main() -> iced::Result {
+    tracing_subscriber::fmt::init();
+    tracing::info!("Starting Recent Files Enabler");
+
     let is_admin = unsafe { windows::Win32::UI::Shell::IsUserAnAdmin().as_bool() };
 
     iced::application(
