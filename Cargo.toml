@@ -8,6 +8,7 @@ chrono = "0.4.42"
 iced = { version = "0.14.0", features = ["tokio"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
+wmi = "0.18.0"
 tokio = { version = "1.0", features = ["full"] }
 winreg = "0.55.0"
 

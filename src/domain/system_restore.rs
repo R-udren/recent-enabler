@@ -5,6 +5,4 @@
 pub struct SystemRestoreInfo {
     pub enabled: bool,
     pub method: &'static str,
-    pub frequency_minutes: Option<u32>,
-    pub disk_percent: Option<u32>,
 }
