@@ -18,6 +18,8 @@ pub enum Message {
     OpenRecentFolder,
     OpenPrefetchFolder,
     RestartAsAdmin,
+    SetSystemRestoreFrequency(u32),
+    SetSystemRestoreDiskPercent(u32),
 }
 
 pub struct App {
@@ -179,6 +181,36 @@ impl App {
                     Message::LoadedSystemRestore,
                 ),
             ]),
+            Message::SetSystemRestoreFrequency(min) => {
+                if !self.is_admin {
+                    let _ = crate::repositories::elevation::run_as_admin();
+                    std::process::exit(0);
+                }
+                Task::perform(
+                    async move {
+                        let _ = services::system_restore::set_frequency(min)
+                            .map_err(|e: crate::domain::AppError| e.to_string());
+                        services::system_restore::get_info()
+                            .map_err(|e: crate::domain::AppError| e.to_string())
+                    },
+                    Message::LoadedSystemRestore,
+                )
+            }
+            Message::SetSystemRestoreDiskPercent(percent) => {
+                if !self.is_admin {
+                    let _ = crate::repositories::elevation::run_as_admin();
+                    std::process::exit(0);
+                }
+                Task::perform(
+                    async move {
+                        let _ = services::system_restore::set_disk_percent(percent)
+                            .map_err(|e: crate::domain::AppError| e.to_string());
+                        services::system_restore::get_info()
+                            .map_err(|e: crate::domain::AppError| e.to_string())
+                    },
+                    Message::LoadedSystemRestore,
+                )
+            }
         }
     }
 
@@ -210,7 +242,9 @@ impl App {
                     self.system_restore.as_ref(),
                     self.is_admin,
                     Message::EnableSystemRestore,
-                    Message::RestartAsAdmin
+                    Message::RestartAsAdmin,
+                    Message::SetSystemRestoreFrequency(0),
+                    Message::SetSystemRestoreDiskPercent(10),
                 ),
                 Space::new().height(20),
             ]
