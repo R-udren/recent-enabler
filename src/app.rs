@@ -1,4 +1,4 @@
-use crate::{recent, sysmain, system_restore, ui, utils};
+use crate::{service, ui, utils};
 use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Element, Fill, Task};
 use std::time::SystemTime;
@@ -48,11 +48,11 @@ pub struct SystemRestoreStatus {
 
 #[derive(Default)]
 pub struct State {
-    recent_status: Option<RecentStatus>,
-    sysmain_status: Option<SysMainStatus>,
-    system_restore_status: Option<SystemRestoreStatus>,
-    status_message: String,
-    is_admin: bool,
+    pub recent_status: Option<RecentStatus>,
+    pub sysmain_status: Option<SysMainStatus>,
+    pub system_restore_status: Option<SystemRestoreStatus>,
+    pub status_message: String,
+    pub is_admin: bool,
 }
 
 impl State {
@@ -68,9 +68,12 @@ pub fn init() -> (State, Task<Message>) {
     (
         State::new(),
         Task::batch(vec![
-            Task::perform(check_recent_async(), Message::RecentChecked),
-            Task::perform(check_sysmain_async(), Message::SysMainChecked),
-            Task::perform(check_system_restore_async(), Message::SystemRestoreChecked),
+            Task::perform(service::check_recent(), Message::RecentChecked),
+            Task::perform(service::check_sysmain(), Message::SysMainChecked),
+            Task::perform(
+                service::check_system_restore(),
+                Message::SystemRestoreChecked,
+            ),
         ]),
     )
 }
@@ -78,15 +81,19 @@ pub fn init() -> (State, Task<Message>) {
 pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::Refresh => Task::batch(vec![
-            Task::perform(check_recent_async(), Message::RecentChecked),
-            Task::perform(check_sysmain_async(), Message::SysMainChecked),
-            Task::perform(check_system_restore_async(), Message::SystemRestoreChecked),
+            Task::perform(service::check_recent(), Message::RecentChecked),
+            Task::perform(service::check_sysmain(), Message::SysMainChecked),
+            Task::perform(
+                service::check_system_restore(),
+                Message::SystemRestoreChecked,
+            ),
         ]),
-        Message::EnableRecent => Task::perform(enable_recent_async(), Message::RecentEnabled),
-        Message::EnableSysMain => Task::perform(enable_sysmain_async(), Message::SysMainEnabled),
-        Message::EnableSystemRestore => {
-            Task::perform(enable_system_restore_async(), Message::SystemRestoreEnabled)
-        }
+        Message::EnableRecent => Task::perform(service::enable_recent(), Message::RecentEnabled),
+        Message::EnableSysMain => Task::perform(service::enable_sysmain(), Message::SysMainEnabled),
+        Message::EnableSystemRestore => Task::perform(
+            service::enable_system_restore(),
+            Message::SystemRestoreEnabled,
+        ),
         Message::RecentChecked(result) => {
             match result {
                 Ok(status) => {
@@ -120,7 +127,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::RecentEnabled(result) => match result {
             Ok(msg) => {
                 state.status_message = msg;
-                Task::perform(check_recent_async(), Message::RecentChecked)
+                Task::perform(service::check_recent(), Message::RecentChecked)
             }
             Err(e) => {
                 state.status_message = format!("Ошибка: {}", e);
@@ -131,8 +138,8 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             Ok(msg) => {
                 state.status_message = msg;
                 Task::batch(vec![
-                    Task::perform(check_recent_async(), Message::RecentChecked),
-                    Task::perform(check_sysmain_async(), Message::SysMainChecked),
+                    Task::perform(service::check_recent(), Message::RecentChecked),
+                    Task::perform(service::check_sysmain(), Message::SysMainChecked),
                 ])
             }
             Err(e) => {
@@ -143,7 +150,10 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::SystemRestoreEnabled(result) => match result {
             Ok(msg) => {
                 state.status_message = msg;
-                Task::perform(check_system_restore_async(), Message::SystemRestoreChecked)
+                Task::perform(
+                    service::check_system_restore(),
+                    Message::SystemRestoreChecked,
+                )
             }
             Err(e) => {
                 state.status_message = format!("Ошибка: {}", e);
@@ -480,81 +490,4 @@ fn view_system_restore_card(
             )
         })
         .into()
-}
-
-async fn check_recent_async() -> Result<RecentStatus, String> {
-    let path = recent::get_recent_folder().map_err(|e| e.to_string())?;
-    let is_disabled = recent::is_recent_disabled().map_err(|e| e.to_string())?;
-    let info = recent::get_recent_info().map_err(|e| e.to_string())?;
-
-    Ok(RecentStatus {
-        path: path.display().to_string(),
-        is_disabled,
-        files_count: info.lnk_count,
-        oldest_time: info.oldest_time,
-        newest_time: info.newest_time,
-    })
-}
-
-async fn check_sysmain_async() -> Result<SysMainStatus, String> {
-    let service_status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
-    let startup_type = sysmain::get_sysmain_startup_type().map_err(|e| e.to_string())?;
-    let prefetch_path = sysmain::get_prefetch_folder().map_err(|e| e.to_string())?;
-
-    // Get prefetch info but don't fail the entire check if it's inaccessible
-    let (prefetch_count, oldest_time, newest_time, prefetch_error) =
-        match sysmain::get_prefetch_info() {
-            Ok(info) => (info.pf_count, info.oldest_time, info.newest_time, None),
-            Err(e) => (0, None, None, Some(e.to_string())),
-        };
-
-    Ok(SysMainStatus {
-        is_running: service_status == sysmain::ServiceStatus::Running,
-        is_auto: startup_type == sysmain::StartupType::Automatic,
-        startup_type: startup_type.as_str().to_string(),
-        prefetch_path: prefetch_path.display().to_string(),
-        prefetch_count,
-        oldest_time,
-        newest_time,
-        prefetch_error,
-    })
-}
-
-async fn enable_recent_async() -> Result<String, String> {
-    if !recent::is_recent_disabled().map_err(|e| e.to_string())? {
-        return Ok("Запись в Recent уже включена!".to_string());
-    }
-    recent::enable_recent().map_err(|e| e.to_string())?;
-    Ok("Запись в Recent успешно включена!".to_string())
-}
-
-async fn enable_sysmain_async() -> Result<String, String> {
-    if !utils::is_admin() {
-        return Err("Требуются права администратора для включения службы Prefetch!".to_string());
-    }
-
-    let status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
-    let startup = sysmain::get_sysmain_startup_type().map_err(|e| e.to_string())?;
-
-    if status == sysmain::ServiceStatus::Running && startup == sysmain::StartupType::Automatic {
-        return Ok("Служба Prefetch уже включена и запущена!".to_string());
-    }
-
-    sysmain::enable_sysmain().map_err(|e| e.to_string())?;
-    Ok("Служба Prefetch успешно включена и запущена!".to_string())
-}
-
-async fn check_system_restore_async() -> Result<SystemRestoreStatus, String> {
-    let is_enabled = system_restore::get_system_restore_info().map_err(|e| e.to_string())?;
-
-    Ok(SystemRestoreStatus { is_enabled })
-}
-
-async fn enable_system_restore_async() -> Result<String, String> {
-    if !utils::is_admin() {
-        return Err("Требуются права администратора для включения System Restore!".to_string());
-    }
-
-    system_restore::enable_system_restore().map_err(|e| e.to_string())?;
-    Ok("System Restore успешно включена на диске C:!".to_string())
 }

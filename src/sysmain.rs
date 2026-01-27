@@ -1,5 +1,5 @@
+use crate::utils;
 use anyhow::{Context, Result};
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use windows::core::PCWSTR;
 use windows::Win32::System::Services::*;
@@ -50,154 +50,70 @@ pub fn get_prefetch_folder() -> Result<PathBuf> {
     Ok(PathBuf::from(windows_dir).join("Prefetch"))
 }
 
-fn scan_prefetch_directory(prefetch_path: &PathBuf) -> Result<Vec<std::fs::DirEntry>> {
-    let entries = match std::fs::read_dir(prefetch_path) {
-        Ok(iter) => iter,
-        Err(err) => match err.kind() {
-            ErrorKind::PermissionDenied => {
-                return Err(anyhow::anyhow!(
-                    "Нет доступа к папке Prefetch. Запустите программу с правами администратора."
-                ));
-            }
-            _ => return Err(err).context("Не удалось прочитать папку Prefetch"),
-        },
-    };
-
-    Ok(entries.filter_map(|e| e.ok()).collect())
-}
-
-fn count_pf_files(entries: &[std::fs::DirEntry]) -> usize {
-    entries
-        .iter()
-        .filter(|entry| {
-            entry
-                .path()
-                .extension()
-                .map(|ext| ext.eq_ignore_ascii_case("pf"))
-                .unwrap_or(false)
-        })
-        .count()
-}
-
-fn collect_pf_dates(entries: &[std::fs::DirEntry]) -> Vec<std::time::SystemTime> {
-    entries
-        .iter()
-        .filter(|entry| {
-            entry
-                .path()
-                .extension()
-                .map(|ext| ext.eq_ignore_ascii_case("pf"))
-                .unwrap_or(false)
-        })
-        .filter_map(|entry| entry.metadata().ok())
-        .filter_map(|metadata| metadata.modified().ok())
-        .collect()
-}
-
-fn get_oldest_newest_dates(
-    mut dates: Vec<std::time::SystemTime>,
-) -> (Option<std::time::SystemTime>, Option<std::time::SystemTime>) {
-    if dates.is_empty() {
-        return (None, None);
-    }
-    dates.sort();
-    (dates.first().copied(), dates.last().copied())
-}
-
 pub fn get_prefetch_info() -> Result<PrefetchInfo> {
     let prefetch_path = get_prefetch_folder()?;
-
-    if !prefetch_path.exists() {
-        return Ok(PrefetchInfo {
-            pf_count: 0,
-            oldest_time: None,
-            newest_time: None,
-        });
-    }
-
-    let entries = scan_prefetch_directory(&prefetch_path)?;
-    let pf_count = count_pf_files(&entries);
-    let dates = collect_pf_dates(&entries);
-    let (oldest_time, newest_time) = get_oldest_newest_dates(dates);
+    let stats = utils::get_directory_stats(&prefetch_path, "pf")?;
 
     Ok(PrefetchInfo {
-        pf_count,
-        oldest_time,
-        newest_time,
+        pf_count: stats.count,
+        oldest_time: stats.oldest,
+        newest_time: stats.newest,
     })
 }
 
 // === Service Control Manager operations ===
 
-fn open_service_manager() -> Result<SC_HANDLE> {
-    unsafe {
-        let scm = OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_CONNECT)
-            .context("Не удалось открыть Service Control Manager")?;
+struct ServiceHandle(SC_HANDLE);
 
-        if scm.is_invalid() {
-            return Err(anyhow::anyhow!("Service Control Manager недоступен"));
+impl Drop for ServiceHandle {
+    fn drop(&mut self) {
+        if !self.0.is_invalid() {
+            unsafe {
+                let _ = CloseServiceHandle(self.0);
+            }
         }
-
-        Ok(scm)
     }
 }
 
-fn open_sysmain_service(scm: SC_HANDLE, access: u32) -> Result<SC_HANDLE> {
+fn with_service<F, R>(access: u32, service_access: u32, f: F) -> Result<R>
+where
+    F: FnOnce(SC_HANDLE) -> Result<R>,
+{
     unsafe {
+        let scm = OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), access)
+            .context("Не удалось открыть Service Control Manager")?;
+        let scm = ServiceHandle(scm);
+
         let service_name: Vec<u16> = SYSMAIN_SERVICE_NAME.encode_utf16().chain(Some(0)).collect();
-        OpenServiceW(scm, PCWSTR(service_name.as_ptr()), access)
-            .context("Не удалось открыть службу SysMain")
-    }
-}
+        let service = OpenServiceW(scm.0, PCWSTR(service_name.as_ptr()), service_access)
+            .context("Не удалось открыть службу SysMain")?;
+        let service = ServiceHandle(service);
 
-fn query_service_status(service: SC_HANDLE) -> Result<SERVICE_STATUS> {
-    unsafe {
-        let mut status = SERVICE_STATUS::default();
-        QueryServiceStatus(service, &mut status).context("Не удалось получить статус службы")?;
-        Ok(status)
+        f(service.0)
     }
 }
 
 pub fn get_sysmain_status() -> Result<ServiceStatus> {
-    unsafe {
-        let scm = match open_service_manager() {
-            Ok(h) => h,
-            Err(_) => return Ok(ServiceStatus::NotFound),
-        };
+    let res = with_service(SC_MANAGER_CONNECT, SERVICE_QUERY_STATUS, |service| unsafe {
+        let mut status = SERVICE_STATUS::default();
+        QueryServiceStatus(service, &mut status).context("Не удалось получить статус службы")?;
 
-        let service = match open_sysmain_service(scm, SERVICE_QUERY_STATUS) {
-            Ok(s) => s,
-            Err(_) => {
-                let _ = CloseServiceHandle(scm);
-                return Ok(ServiceStatus::NotFound);
-            }
-        };
-
-        let status = match query_service_status(service) {
-            Ok(s) => s,
-            Err(_) => {
-                let _ = CloseServiceHandle(service);
-                let _ = CloseServiceHandle(scm);
-                return Ok(ServiceStatus::Unknown);
-            }
-        };
-
-        let _ = CloseServiceHandle(service);
-        let _ = CloseServiceHandle(scm);
-
-        let service_status = match status.dwCurrentState {
+        Ok(match status.dwCurrentState {
             SERVICE_RUNNING => ServiceStatus::Running,
             SERVICE_STOPPED => ServiceStatus::Stopped,
             SERVICE_PAUSED => ServiceStatus::Paused,
             _ => ServiceStatus::Unknown,
-        };
+        })
+    });
 
-        Ok(service_status)
+    match res {
+        Ok(s) => Ok(s),
+        Err(_) => Ok(ServiceStatus::NotFound),
     }
 }
 
-fn query_service_config(service: SC_HANDLE) -> Result<QUERY_SERVICE_CONFIGW> {
-    unsafe {
+pub fn get_sysmain_startup_type() -> Result<StartupType> {
+    let res = with_service(SC_MANAGER_CONNECT, SERVICE_QUERY_CONFIG, |service| unsafe {
         let mut bytes_needed = 0u32;
         let _ = QueryServiceConfigW(service, None, 0, &mut bytes_needed);
 
@@ -207,105 +123,50 @@ fn query_service_config(service: SC_HANDLE) -> Result<QUERY_SERVICE_CONFIGW> {
         QueryServiceConfigW(service, Some(config), bytes_needed, &mut bytes_needed)
             .context("Не удалось получить конфигурацию службы")?;
 
-        Ok(*config)
-    }
-}
-
-pub fn get_sysmain_startup_type() -> Result<StartupType> {
-    unsafe {
-        let scm = match open_service_manager() {
-            Ok(h) => h,
-            Err(_) => return Ok(StartupType::Unknown),
-        };
-
-        let service = match open_sysmain_service(scm, SERVICE_QUERY_CONFIG) {
-            Ok(s) => s,
-            Err(_) => {
-                let _ = CloseServiceHandle(scm);
-                return Ok(StartupType::Unknown);
-            }
-        };
-
-        let config = match query_service_config(service) {
-            Ok(c) => c,
-            Err(_) => {
-                let _ = CloseServiceHandle(service);
-                let _ = CloseServiceHandle(scm);
-                return Ok(StartupType::Unknown);
-            }
-        };
-
-        let _ = CloseServiceHandle(service);
-        let _ = CloseServiceHandle(scm);
-
-        let startup = match config.dwStartType {
+        Ok(match (*config).dwStartType {
             SERVICE_AUTO_START => StartupType::Automatic,
             SERVICE_DEMAND_START => StartupType::Manual,
             SERVICE_DISABLED => StartupType::Disabled,
             _ => StartupType::Unknown,
-        };
+        })
+    });
 
-        Ok(startup)
-    }
-}
-
-fn change_service_config(service: SC_HANDLE, start_type: SERVICE_START_TYPE) -> Result<()> {
-    unsafe {
-        ChangeServiceConfigW(
-            service,
-            ENUM_SERVICE_TYPE(SERVICE_NO_CHANGE),
-            start_type,
-            SERVICE_ERROR(SERVICE_NO_CHANGE),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            None,
-            PCWSTR::null(),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            PCWSTR::null(),
-        )
-        .context("Не удалось изменить конфигурацию службы")
-    }
-}
-
-fn start_service(service: SC_HANDLE) -> Result<()> {
-    unsafe {
-        let start_result = StartServiceW(service, None);
-
-        if start_result.is_err() {
-            let err = windows::core::Error::from_thread();
-            if err.code().0 as u32 != ERROR_SERVICE_ALREADY_RUNNING {
-                return Err(anyhow::anyhow!("Не удалось запустить службу: {}", err));
-            }
-        }
-
-        Ok(())
+    match res {
+        Ok(s) => Ok(s),
+        Err(_) => Ok(StartupType::Unknown),
     }
 }
 
 pub fn enable_sysmain() -> Result<()> {
-    unsafe {
-        let scm = OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_ALL_ACCESS).context(
-            "Не удалось открыть Service Control Manager. Требуются права администратора.",
-        )?;
+    with_service(
+        SC_MANAGER_ALL_ACCESS,
+        SERVICE_CHANGE_CONFIG | SERVICE_START,
+        |service| unsafe {
+            ChangeServiceConfigW(
+                service,
+                ENUM_SERVICE_TYPE(SERVICE_NO_CHANGE),
+                SERVICE_AUTO_START,
+                SERVICE_ERROR(SERVICE_NO_CHANGE),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                None,
+                PCWSTR::null(),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                PCWSTR::null(),
+            )
+            .context("Не удалось изменить конфигурацию службы")?;
 
-        if scm.is_invalid() {
-            return Err(anyhow::anyhow!(
-                "Не удалось открыть Service Control Manager"
-            ));
-        }
-
-        let service = open_sysmain_service(scm, SERVICE_CHANGE_CONFIG | SERVICE_START)
-            .context("Не удалось открыть службу SysMain. Требуются права администратора.")?;
-
-        change_service_config(service, SERVICE_AUTO_START)?;
-        start_service(service)?;
-
-        let _ = CloseServiceHandle(service);
-        let _ = CloseServiceHandle(scm);
-
-        Ok(())
-    }
+            let start_result = StartServiceW(service, None);
+            if start_result.is_err() {
+                let err = windows::core::Error::from_thread();
+                if err.code().0 as u32 != ERROR_SERVICE_ALREADY_RUNNING {
+                    return Err(anyhow::anyhow!("Не удалось запустить службу: {}", err));
+                }
+            }
+            Ok(())
+        },
+    )
 }
 
 #[cfg(test)]

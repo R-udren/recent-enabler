@@ -1,17 +1,12 @@
+use crate::utils;
 use anyhow::{Context, Result};
 use std::process::Command;
-use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
+use winreg::enums::HKEY_LOCAL_MACHINE;
 
 /// Check if System Restore is enabled for C: drive
 pub fn is_system_restore_enabled() -> Result<bool> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok(system_restore) =
-        hklm.open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SystemRestore")
-    {
-        let rpsession_interval: Result<u32, _> = system_restore.get_value("RPSessionInterval");
-        return Ok(rpsession_interval.unwrap_or(0) == 1);
-    }
-    Ok(false)
+    let path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore";
+    Ok(utils::read_reg_dword(HKEY_LOCAL_MACHINE, path, "RPSessionInterval").unwrap_or(0) == 1)
 }
 
 /// Enable System Restore on C: drive

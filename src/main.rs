@@ -2,7 +2,9 @@
 
 mod app;
 mod recent;
+mod service;
 mod sysmain;
+
 mod system_restore;
 mod ui;
 mod utils;
