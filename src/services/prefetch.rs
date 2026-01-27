@@ -1,6 +1,6 @@
 //! Prefetch service - business logic only.
 
-use crate::domain::{FileStats, OperationResult, PrefetchInfo, Result, ServiceState, StartupMode};
+use crate::domain::{OperationResult, PrefetchInfo, Result, ServiceState, StartupMode};
 use crate::repositories::{file_system, windows_service};
 use std::path::PathBuf;
 use windows::Win32::System::Services::*;
@@ -8,8 +8,7 @@ use windows::Win32::System::Services::*;
 const SERVICE_NAME: &str = "SysMain";
 
 fn get_prefetch_path() -> Result<PathBuf> {
-    let windows = std::env::var("SystemRoot")
-        .or_else(|_| std::env::var("windir"))?;
+    let windows = std::env::var("SystemRoot").or_else(|_| std::env::var("windir"))?;
     Ok(PathBuf::from(windows).join("Prefetch"))
 }
 
@@ -19,7 +18,11 @@ fn get_service_info() -> (ServiceState, StartupMode) {
         Err(_) => return (ServiceState::Unknown, StartupMode::Unknown),
     };
 
-    let svc = match windows_service::open_service(&scm, SERVICE_NAME, SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG) {
+    let svc = match windows_service::open_service(
+        &scm,
+        SERVICE_NAME,
+        SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG,
+    ) {
         Ok(s) => s,
         Err(_) => return (ServiceState::Unknown, StartupMode::Unknown),
     };
@@ -38,7 +41,7 @@ pub fn get_info() -> Result<PrefetchInfo> {
         Ok(f) => (f, true, None),
         Err(_e) => {
             let err_msg = "Requires admin access".to_string();
-            (FileStats::empty(), false, Some(err_msg))
+            (Default::default(), false, Some(err_msg))
         }
     };
 
@@ -54,7 +57,8 @@ pub fn get_info() -> Result<PrefetchInfo> {
 
 pub fn enable() -> Result<OperationResult> {
     let scm = windows_service::open_scm()?;
-    let svc = windows_service::open_service(&scm, SERVICE_NAME, SERVICE_CHANGE_CONFIG | SERVICE_START)?;
+    let svc =
+        windows_service::open_service(&scm, SERVICE_NAME, SERVICE_CHANGE_CONFIG | SERVICE_START)?;
 
     windows_service::set_service_auto_start(&svc)?;
     windows_service::start_service(&svc)?;

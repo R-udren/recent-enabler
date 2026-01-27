@@ -1,7 +1,7 @@
 //! Recent Files service - business logic only.
 
 use crate::domain::{
-    CheckSeverity, FileStats, OperationResult, RecentInfo, RecentStatus, RegistryCheck, Result,
+    CheckSeverity, OperationResult, RecentInfo, RecentStatus, RegistryCheck, Result,
 };
 use crate::repositories::{file_system, registry};
 use std::path::PathBuf;
@@ -100,7 +100,7 @@ fn check_status(checks: &[RegistryCheck]) -> RecentStatus {
 
 pub fn get_info() -> Result<RecentInfo> {
     let path = get_recent_path()?;
-    let files = file_system::scan_folder(&path, "lnk").unwrap_or_else(|_| FileStats::empty());
+    let files = file_system::scan_folder(&path, "lnk").unwrap_or_default();
 
     let mut checks = build_checks();
     for check in &mut checks {

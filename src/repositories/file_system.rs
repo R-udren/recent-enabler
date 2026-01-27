@@ -6,7 +6,7 @@ use std::path::Path;
 
 pub fn scan_folder(path: &Path, extension: &str) -> Result<FileStats> {
     if !path.exists() {
-        return Ok(FileStats::empty());
+        return Ok(Default::default());
     }
 
     let (count, oldest, newest) = std::fs::read_dir(path)?

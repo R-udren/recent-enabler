@@ -151,7 +151,7 @@ impl App {
                             .arg("Start-Process -Verb RunAs -FilePath (Get-Process -Id $PID).Path")
                             .spawn();
                         // optionally log the error to stderr for debugging
-                        eprintln!("Elevation failed: {}", e.to_user_string());
+                        eprintln!("Elevation failed: {}", e);
                         // still exit, since the fallback may have triggered an elevation prompt
                         std::process::exit(0);
                     }

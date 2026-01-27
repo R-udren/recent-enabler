@@ -88,36 +88,6 @@ impl SystemRestoreManager {
         Ok(())
     }
 
-    /// Disable System Restore protection on a specific drive
-    #[instrument(skip(self))]
-    pub fn disable_protection(&self, drive_letter: &str) -> Result<()> {
-        let normalized_drive = self.normalize_drive(drive_letter);
-        info!("Disabling protection for drive: {}", normalized_drive);
-
-        let input = EnableInput {
-            drive: normalized_drive,
-        };
-
-        let out: WmiReturnValue = self
-            .wmi_con
-            .exec_class_method::<SystemRestore, _>("Disable", input)
-            .map_err(|e| {
-                error!("WMI Disable method failed: {}", e);
-                AppError::Other(format!("Failed to disable protection: {}", e))
-            })?;
-
-        if out.return_value != 0 {
-            error!("WMI Disable returned error code: {}", out.return_value);
-            return Err(AppError::Other(format!(
-                "WMI Disable returned error code: {}",
-                out.return_value
-            )));
-        }
-
-        info!("Protection disabled successfully");
-        Ok(())
-    }
-
     /// Create a new Restore Point
     #[instrument(skip(self))]
     pub fn create_restore_point(
