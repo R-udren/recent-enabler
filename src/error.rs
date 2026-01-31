@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+pub type Result<T = (), E = RecentEnablerError> = std::result::Result<T, E>;
+
 #[derive(Error, Debug, Clone)]
 pub enum RecentEnablerError {
     #[error("Failed to get Recent folder path: {0}")]
@@ -124,5 +126,3 @@ impl RecentEnablerError {
         }
     }
 }
-
-pub type Result<T> = std::result::Result<T, RecentEnablerError>;

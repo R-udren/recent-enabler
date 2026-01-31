@@ -1,4 +1,7 @@
-use crate::{error::RecentEnablerError, utils};
+use crate::{
+    error::{RecentEnablerError, Result},
+    utils,
+};
 use std::path::PathBuf;
 use winreg::enums::*;
 
@@ -8,7 +11,7 @@ pub struct RecentInfo {
     pub newest_time: Option<std::time::SystemTime>,
 }
 
-pub fn get_recent_folder() -> Result<PathBuf, RecentEnablerError> {
+pub fn get_recent_folder() -> Result<PathBuf> {
     let appdata = std::env::var("APPDATA").map_err(|e| {
         RecentEnablerError::RecentFolderNotFound(format!("APPDATA variable not found: {}", e))
     })?;
@@ -18,7 +21,7 @@ pub fn get_recent_folder() -> Result<PathBuf, RecentEnablerError> {
         .join("Recent"))
 }
 
-pub fn get_recent_info() -> Result<RecentInfo, RecentEnablerError> {
+pub fn get_recent_info() -> Result<RecentInfo> {
     let recent_path = get_recent_folder()?;
     let stats = utils::get_directory_stats(&recent_path, "lnk")
         .map_err(|e| RecentEnablerError::RecentInfoFailed(e.to_string()))?;
@@ -30,7 +33,7 @@ pub fn get_recent_info() -> Result<RecentInfo, RecentEnablerError> {
     })
 }
 
-pub fn is_recent_disabled() -> Result<bool, RecentEnablerError> {
+pub fn is_recent_disabled() -> Result<bool> {
     let adv_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     let exp_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
 
@@ -44,7 +47,7 @@ pub fn is_recent_disabled() -> Result<bool, RecentEnablerError> {
     Ok(track_docs || show_recent || show_frequent)
 }
 
-pub fn enable_recent() -> Result<(), RecentEnablerError> {
+pub fn enable_recent() -> Result {
     let adv_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     let exp_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
 

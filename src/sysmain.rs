@@ -1,4 +1,7 @@
-use crate::{error::RecentEnablerError, utils};
+use crate::{
+    error::{RecentEnablerError, Result},
+    utils,
+};
 use std::path::PathBuf;
 use windows::core::PCWSTR;
 use windows::Win32::System::Services::*;
@@ -42,7 +45,7 @@ impl StartupType {
 
 // === Path and folder operations ===
 
-pub fn get_prefetch_folder() -> Result<PathBuf, RecentEnablerError> {
+pub fn get_prefetch_folder() -> Result<PathBuf> {
     let windows_dir = std::env::var("SystemRoot")
         .or_else(|_| std::env::var("windir"))
         .map_err(|e| {
@@ -51,7 +54,7 @@ pub fn get_prefetch_folder() -> Result<PathBuf, RecentEnablerError> {
     Ok(PathBuf::from(windows_dir).join("Prefetch"))
 }
 
-pub fn get_prefetch_info() -> Result<PrefetchInfo, RecentEnablerError> {
+pub fn get_prefetch_info() -> Result<PrefetchInfo> {
     let prefetch_path = get_prefetch_folder()?;
     let stats = utils::get_directory_stats(&prefetch_path, "pf")
         .map_err(|e| RecentEnablerError::PrefetchInfoFailed(e.to_string()))?;
@@ -77,28 +80,28 @@ impl Drop for ServiceHandle {
     }
 }
 
-fn with_service<F, R>(access: u32, service_access: u32, f: F) -> Result<R, RecentEnablerError>
+fn with_service<F, R>(access: u32, service_access: u32, f: F) -> Result<R>
 where
-    F: FnOnce(SC_HANDLE) -> Result<R, RecentEnablerError>,
+    F: FnOnce(SC_HANDLE) -> Result<R>,
 {
     unsafe {
         let scm = OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), access).map_err(|e| {
             RecentEnablerError::ServiceManagerOpenFailed(format!("OpenSCManagerW failed: {}", e))
         })?;
-        let scm = ServiceHandle(scm);
+        let _scm_handle = ServiceHandle(scm);
 
         let service_name: Vec<u16> = SYSMAIN_SERVICE_NAME.encode_utf16().chain(Some(0)).collect();
-        let service =
-            OpenServiceW(scm.0, PCWSTR(service_name.as_ptr()), service_access).map_err(|e| {
+        let service = OpenServiceW(_scm_handle.0, PCWSTR(service_name.as_ptr()), service_access)
+            .map_err(|e| {
                 RecentEnablerError::SysMainServiceNotFound(format!("OpenServiceW failed: {}", e))
             })?;
-        let service = ServiceHandle(service);
+        let _service_handle = ServiceHandle(service);
 
-        f(service.0)
+        f(_service_handle.0)
     }
 }
 
-pub fn get_sysmain_status() -> Result<ServiceStatus, RecentEnablerError> {
+pub fn get_sysmain_status() -> Result<ServiceStatus> {
     let res = with_service(SC_MANAGER_CONNECT, SERVICE_QUERY_STATUS, |service| unsafe {
         let mut status = SERVICE_STATUS::default();
         QueryServiceStatus(service, &mut status).map_err(|e| {
@@ -122,7 +125,7 @@ pub fn get_sysmain_status() -> Result<ServiceStatus, RecentEnablerError> {
     }
 }
 
-pub fn get_sysmain_startup_type() -> Result<StartupType, RecentEnablerError> {
+pub fn get_sysmain_startup_type() -> Result<StartupType> {
     let res = with_service(SC_MANAGER_CONNECT, SERVICE_QUERY_CONFIG, |service| unsafe {
         let mut bytes_needed = 0u32;
         let _ = QueryServiceConfigW(service, None, 0, &mut bytes_needed);
@@ -153,7 +156,7 @@ pub fn get_sysmain_startup_type() -> Result<StartupType, RecentEnablerError> {
     }
 }
 
-pub fn enable_sysmain() -> Result<(), RecentEnablerError> {
+pub fn enable_sysmain() -> Result {
     with_service(
         SC_MANAGER_ALL_ACCESS,
         SERVICE_CHANGE_CONFIG | SERVICE_START,

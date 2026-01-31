@@ -1,6 +1,9 @@
-use crate::{error::RecentEnablerError, recent, status, sysmain, system_restore, utils};
+use crate::{
+    error::{RecentEnablerError, Result},
+    recent, status, sysmain, system_restore, utils,
+};
 
-pub async fn check_recent() -> Result<status::RecentStatus, RecentEnablerError> {
+pub async fn check_recent() -> Result<status::RecentStatus> {
     let path = recent::get_recent_folder()?;
     let is_disabled = recent::is_recent_disabled()?;
     let info = recent::get_recent_info()?;
@@ -14,7 +17,7 @@ pub async fn check_recent() -> Result<status::RecentStatus, RecentEnablerError> 
     })
 }
 
-pub async fn check_sysmain() -> Result<status::SysMainStatus, RecentEnablerError> {
+pub async fn check_sysmain() -> Result<status::SysMainStatus> {
     let service_status = sysmain::get_sysmain_status()?;
     let startup_type = sysmain::get_sysmain_startup_type()?;
     let prefetch_path = sysmain::get_prefetch_folder()?;
@@ -36,12 +39,12 @@ pub async fn check_sysmain() -> Result<status::SysMainStatus, RecentEnablerError
     })
 }
 
-pub async fn check_system_restore() -> Result<status::SystemRestoreStatus, RecentEnablerError> {
+pub async fn check_system_restore() -> Result<status::SystemRestoreStatus> {
     let is_enabled = system_restore::get_system_restore_info()?;
     Ok(status::SystemRestoreStatus { is_enabled })
 }
 
-pub async fn enable_recent() -> Result<(), RecentEnablerError> {
+pub async fn enable_recent() -> Result {
     if !recent::is_recent_disabled()? {
         return Err(RecentEnablerError::RecentAlreadyEnabled);
     }
@@ -49,7 +52,7 @@ pub async fn enable_recent() -> Result<(), RecentEnablerError> {
     Ok(())
 }
 
-pub async fn enable_sysmain() -> Result<(), RecentEnablerError> {
+pub async fn enable_sysmain() -> Result {
     if !utils::is_admin() {
         return Err(RecentEnablerError::SysMainRequiresAdmin);
     }
@@ -65,7 +68,7 @@ pub async fn enable_sysmain() -> Result<(), RecentEnablerError> {
     Ok(())
 }
 
-pub async fn enable_system_restore() -> Result<(), RecentEnablerError> {
+pub async fn enable_system_restore() -> Result {
     if !utils::is_admin() {
         return Err(RecentEnablerError::SystemRestoreRequiresAdmin);
     }

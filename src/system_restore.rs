@@ -1,15 +1,18 @@
-use crate::{error::RecentEnablerError, utils};
+use crate::{
+    error::{RecentEnablerError, Result},
+    utils,
+};
 use std::process::Command;
 use winreg::enums::HKEY_LOCAL_MACHINE;
 
 /// Check if System Restore is enabled for C: drive
-pub fn is_system_restore_enabled() -> Result<bool, RecentEnablerError> {
+pub fn is_system_restore_enabled() -> Result<bool> {
     let path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore";
     Ok(utils::read_reg_dword(HKEY_LOCAL_MACHINE, path, "RPSessionInterval").unwrap_or(0) == 1)
 }
 
 /// Enable System Restore on C: drive
-pub fn enable_system_restore() -> Result<(), RecentEnablerError> {
+pub fn enable_system_restore() -> Result {
     let output = Command::new("powershell")
         .args([
             "-NoProfile",
@@ -39,6 +42,6 @@ pub fn enable_system_restore() -> Result<(), RecentEnablerError> {
 }
 
 /// Get System Restore status for C: drive
-pub fn get_system_restore_info() -> Result<bool, RecentEnablerError> {
+pub fn get_system_restore_info() -> Result<bool> {
     is_system_restore_enabled()
 }
