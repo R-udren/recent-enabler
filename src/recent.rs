@@ -3,7 +3,7 @@ use crate::{
     utils,
 };
 use std::path::PathBuf;
-use winreg::enums::*;
+use winreg::enums::HKEY_CURRENT_USER;
 
 pub struct RecentInfo {
     pub lnk_count: usize,
@@ -11,9 +11,14 @@ pub struct RecentInfo {
     pub newest_time: Option<std::time::SystemTime>,
 }
 
+/// Get the path to the Recent folder
+///
+/// # Errors
+///
+/// Returns error if APPDATA environment variable is not set
 pub fn get_recent_folder() -> Result<PathBuf> {
     let appdata = std::env::var("APPDATA").map_err(|e| {
-        RecentEnablerError::RecentFolderNotFound(format!("APPDATA variable not found: {}", e))
+        RecentEnablerError::RecentFolderNotFound(format!("APPDATA variable not found: {e}"))
     })?;
     Ok(PathBuf::from(appdata)
         .join("Microsoft")
@@ -21,6 +26,11 @@ pub fn get_recent_folder() -> Result<PathBuf> {
         .join("Recent"))
 }
 
+/// Get statistics about files in Recent folder
+///
+/// # Errors
+///
+/// Returns error if folder doesn't exist or cannot be read
 pub fn get_recent_info() -> Result<RecentInfo> {
     let recent_path = get_recent_folder()?;
     let stats = utils::get_directory_stats(&recent_path, "lnk")
@@ -33,6 +43,11 @@ pub fn get_recent_info() -> Result<RecentInfo> {
     })
 }
 
+/// Check if Recent tracking is disabled in registry
+///
+/// # Errors
+///
+/// Returns error if registry keys cannot be read
 pub fn is_recent_disabled() -> Result<bool> {
     let adv_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     let exp_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
@@ -47,6 +62,11 @@ pub fn is_recent_disabled() -> Result<bool> {
     Ok(track_docs || show_recent || show_frequent)
 }
 
+/// Enable Recent tracking in Windows registry
+///
+/// # Errors
+///
+/// Returns error if registry keys cannot be written
 pub fn enable_recent() -> Result {
     let adv_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     let exp_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";

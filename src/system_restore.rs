@@ -6,12 +6,20 @@ use std::process::Command;
 use winreg::enums::HKEY_LOCAL_MACHINE;
 
 /// Check if System Restore is enabled for C: drive
+///
+/// # Errors
+///
+/// Returns error if registry cannot be read
 pub fn is_system_restore_enabled() -> Result<bool> {
     let path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore";
     Ok(utils::read_reg_dword(HKEY_LOCAL_MACHINE, path, "RPSessionInterval").unwrap_or(0) == 1)
 }
 
 /// Enable System Restore on C: drive
+///
+/// # Errors
+///
+/// Returns error if `PowerShell` command fails
 pub fn enable_system_restore() -> Result {
     let output = Command::new("powershell")
         .args([
@@ -22,8 +30,7 @@ pub fn enable_system_restore() -> Result {
         .output()
         .map_err(|e| {
             RecentEnablerError::SystemRestoreEnableFailed(format!(
-                "Failed to execute PowerShell command: {}",
-                e
+                "Failed to execute PowerShell command: {e}"
             ))
         })?;
 
@@ -32,7 +39,7 @@ pub fn enable_system_restore() -> Result {
         let essential = stderr
             .lines()
             .find(|line| !line.trim().is_empty() && !line.contains("ProgressPreference"))
-            .unwrap_or(stderr.as_ref());
+            .unwrap_or_else(|| stderr.as_ref());
         return Err(RecentEnablerError::SystemRestoreEnableFailed(
             essential.to_string(),
         ));
@@ -42,6 +49,10 @@ pub fn enable_system_restore() -> Result {
 }
 
 /// Get System Restore status for C: drive
+///
+/// # Errors
+///
+/// Returns error if status cannot be queried
 pub fn get_system_restore_info() -> Result<bool> {
     is_system_restore_enabled()
 }

@@ -73,39 +73,40 @@ pub enum RecentEnablerError {
 
 impl RecentEnablerError {
     /// Translate error to Russian for UI display
+    #[must_use]
     pub fn to_russian(&self) -> String {
         match self {
-            Self::RecentFolderNotFound(e) => format!("Не удалось найти папку Recent: {}", e),
-            Self::RecentInfoFailed(e) => format!("Не удалось прочитать статистику Recent: {}", e),
+            Self::RecentFolderNotFound(e) => format!("Не удалось найти папку Recent: {e}"),
+            Self::RecentInfoFailed(e) => format!("Не удалось прочитать статистику Recent: {e}"),
             Self::RecentRegistryReadFailed(e) => {
-                format!("Не удалось прочитать настройки реестра Recent: {}", e)
+                format!("Не удалось прочитать настройки реестра Recent: {e}")
             }
-            Self::RecentEnableFailed(e) => format!("Не удалось включить Recent: {}", e),
+            Self::RecentEnableFailed(e) => format!("Не удалось включить Recent: {e}"),
             Self::RecentAlreadyEnabled => "Запись в Recent уже включена".to_string(),
-            Self::PrefetchFolderNotFound(e) => format!("Не удалось найти папку Prefetch: {}", e),
+            Self::PrefetchFolderNotFound(e) => format!("Не удалось найти папку Prefetch: {e}"),
             Self::PrefetchInfoFailed(e) => {
-                format!("Не удалось прочитать статистику Prefetch: {}", e)
+                format!("Не удалось прочитать статистику Prefetch: {e}")
             }
             Self::ServiceManagerOpenFailed(e) => {
-                format!("Не удалось открыть Service Control Manager: {}", e)
+                format!("Не удалось открыть Service Control Manager: {e}")
             }
-            Self::SysMainServiceNotFound(e) => format!("Не удалось открыть службу SysMain: {}", e),
+            Self::SysMainServiceNotFound(e) => format!("Не удалось открыть службу SysMain: {e}"),
             Self::SysMainStatusQueryFailed(e) => {
-                format!("Не удалось получить статус службы SysMain: {}", e)
+                format!("Не удалось получить статус службы SysMain: {e}")
             }
             Self::SysMainConfigQueryFailed(e) => {
-                format!("Не удалось получить конфигурацию службы SysMain: {}", e)
+                format!("Не удалось получить конфигурацию службы SysMain: {e}")
             }
-            Self::SysMainEnableFailed(e) => format!("Не удалось включить службу SysMain: {}", e),
+            Self::SysMainEnableFailed(e) => format!("Не удалось включить службу SysMain: {e}"),
             Self::SysMainAlreadyEnabled => "Служба Prefetch уже включена и запущена".to_string(),
             Self::SysMainRequiresAdmin => {
                 "Требуются права администратора для включения службы Prefetch".to_string()
             }
             Self::SystemRestoreCheckFailed(e) => {
-                format!("Не удалось проверить статус System Restore: {}", e)
+                format!("Не удалось проверить статус System Restore: {e}")
             }
             Self::SystemRestoreEnableFailed(e) => {
-                format!("Не удалось включить System Restore: {}", e)
+                format!("Не удалось включить System Restore: {e}")
             }
             Self::SystemRestoreRequiresAdmin => {
                 "Требуются права администратора для включения System Restore".to_string()
@@ -114,14 +115,14 @@ impl RecentEnablerError {
                 "System Restore уже включена на диске C:".to_string()
             }
             Self::WindowsPathNotFound(e) => {
-                format!("Не удалось получить путь к Windows: {}", e)
+                format!("Не удалось получить путь к Windows: {e}")
             }
-            Self::DirectoryReadFailed(e) => format!("Не удалось прочитать директорию: {}", e),
+            Self::DirectoryReadFailed(e) => format!("Не удалось прочитать директорию: {e}"),
             Self::RegistryReadFailed(e) => {
-                format!("Не удалось прочитать значение реестра: {}", e)
+                format!("Не удалось прочитать значение реестра: {e}")
             }
             Self::RegistryWriteFailed(e) => {
-                format!("Не удалось записать значение реестра: {}", e)
+                format!("Не удалось записать значение реестра: {e}")
             }
         }
     }

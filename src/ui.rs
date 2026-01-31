@@ -9,35 +9,36 @@ pub fn format_time(time: SystemTime) -> String {
 
 pub fn time_ago(time: SystemTime) -> String {
     let now = SystemTime::now();
-    if let Ok(duration) = now.duration_since(time) {
-        let total_secs = duration.as_secs();
-        let hours = total_secs / 3600;
-        let days = total_secs / 86400;
+    now.duration_since(time).map_or_else(
+        |_| "в будущем".to_string(),
+        |duration| {
+            let total_secs = duration.as_secs();
+            let hours = total_secs / 3600;
+            let days = total_secs / 86400;
 
-        if hours < 1 {
-            let mins = total_secs / 60;
-            if mins < 1 {
-                "только что".to_string()
+            if hours < 1 {
+                let mins = total_secs / 60;
+                if mins < 1 {
+                    "только что".to_string()
+                } else {
+                    format!("{mins} мин. назад")
+                }
+            } else if hours < 24 {
+                format!("{hours} ч. назад")
+            } else if days == 1 {
+                "1 день назад".to_string()
             } else {
-                format!("{} мин. назад", mins)
+                format!("{days} дн. назад")
             }
-        } else if hours < 24 {
-            format!("{} ч. назад", hours)
-        } else if days == 1 {
-            "1 день назад".to_string()
-        } else {
-            format!("{} дн. назад", days)
-        }
-    } else {
-        "в будущем".to_string()
-    }
+        },
+    )
 }
 
 pub fn label_text(label: &str) -> text::Text<'_> {
     text(label).size(15).color(Color::from_rgb(0.7, 0.7, 0.7))
 }
 
-pub fn value_text(value: impl ToString) -> text::Text<'static> {
+pub fn value_text(value: &impl ToString) -> text::Text<'static> {
     text(value.to_string()).size(18)
 }
 
@@ -77,10 +78,10 @@ pub fn card_style(_theme: &iced::Theme, bg_color: Color, border_color: Color) ->
     }
 }
 
-pub fn warning_box<'a, M: Clone + 'static>(
-    message: &'a str,
+pub fn warning_box<M: Clone + 'static>(
+    message: &str,
     on_restart: M,
-) -> container::Container<'a, M> {
+) -> container::Container<'_, M> {
     container(
         row![
             text(message).size(13).width(Fill),
@@ -106,10 +107,9 @@ pub fn restart_button<M: Clone>(on_press: M) -> button::Button<'static, M> {
         .on_press(on_press)
         .style(|_theme, status| {
             let base_color = match status {
-                button::Status::Active => Color::from_rgb(0.4, 0.3, 0.2),
                 button::Status::Hovered => Color::from_rgb(0.5, 0.4, 0.3),
                 button::Status::Pressed => Color::from_rgb(0.35, 0.25, 0.15),
-                _ => Color::from_rgb(0.4, 0.3, 0.2),
+                button::Status::Active | button::Status::Disabled => Color::from_rgb(0.4, 0.3, 0.2),
             };
             button::Style {
                 background: Some(iced::Background::Color(base_color)),
@@ -124,8 +124,8 @@ pub fn restart_button<M: Clone>(on_press: M) -> button::Button<'static, M> {
 }
 
 pub fn file_info_rows<'a, M: 'a>(
-    oldest: &Option<SystemTime>,
-    newest: &Option<SystemTime>,
+    oldest: Option<&SystemTime>,
+    newest: Option<&SystemTime>,
 ) -> iced::widget::Column<'a, M> {
     let mut col = column![].spacing(10);
 

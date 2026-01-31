@@ -52,6 +52,7 @@ pub fn init() -> (State, Task<Message>) {
     )
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::Refresh => Task::batch(vec![
@@ -95,7 +96,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.status_message.clear();
                 }
                 Err(e) => {
-                    state.status_message = format!("Ошибка System Restore: {}", e.to_russian())
+                    state.status_message = format!("Ошибка System Restore: {}", e.to_russian());
                 }
             }
             Task::none()
@@ -281,8 +282,8 @@ fn view_recent_card(status: Option<&status::RecentStatus>) -> Element<'_, Messag
                 !status.is_disabled
             )
         ),
-        ui::info_row("Файлов:", ui::value_text(status.files_count)),
-        ui::file_info_rows(&status.oldest_time, &status.newest_time),
+        ui::info_row("Файлов:", ui::value_text(&status.files_count)),
+        ui::file_info_rows(status.oldest_time.as_ref(), status.newest_time.as_ref()),
         ui::info_row(
             "Путь:",
             text(&status.path)
@@ -369,9 +370,12 @@ fn view_sysmain_card(
         content = content
             .push(ui::info_row(
                 "Файлов (.pf):",
-                ui::value_text(status.prefetch_count),
+                ui::value_text(&status.prefetch_count),
             ))
-            .push(ui::file_info_rows(&status.oldest_time, &status.newest_time));
+            .push(ui::file_info_rows(
+                status.oldest_time.as_ref(),
+                status.newest_time.as_ref(),
+            ));
     }
 
     content = content.push(ui::info_row(
