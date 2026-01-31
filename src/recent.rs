@@ -1,5 +1,4 @@
-use crate::utils;
-use anyhow::{Context, Result};
+use crate::{error::RecentEnablerError, utils};
 use std::path::PathBuf;
 use winreg::enums::*;
 
@@ -9,17 +8,20 @@ pub struct RecentInfo {
     pub newest_time: Option<std::time::SystemTime>,
 }
 
-pub fn get_recent_folder() -> Result<PathBuf> {
-    let appdata = std::env::var("APPDATA").context("Не удалось получить переменную APPDATA")?;
+pub fn get_recent_folder() -> Result<PathBuf, RecentEnablerError> {
+    let appdata = std::env::var("APPDATA").map_err(|e| {
+        RecentEnablerError::RecentFolderNotFound(format!("APPDATA variable not found: {}", e))
+    })?;
     Ok(PathBuf::from(appdata)
         .join("Microsoft")
         .join("Windows")
         .join("Recent"))
 }
 
-pub fn get_recent_info() -> Result<RecentInfo> {
+pub fn get_recent_info() -> Result<RecentInfo, RecentEnablerError> {
     let recent_path = get_recent_folder()?;
-    let stats = utils::get_directory_stats(&recent_path, "lnk")?;
+    let stats = utils::get_directory_stats(&recent_path, "lnk")
+        .map_err(|e| RecentEnablerError::RecentInfoFailed(e.to_string()))?;
 
     Ok(RecentInfo {
         lnk_count: stats.count,
@@ -28,7 +30,7 @@ pub fn get_recent_info() -> Result<RecentInfo> {
     })
 }
 
-pub fn is_recent_disabled() -> Result<bool> {
+pub fn is_recent_disabled() -> Result<bool, RecentEnablerError> {
     let adv_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     let exp_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
 
@@ -42,13 +44,16 @@ pub fn is_recent_disabled() -> Result<bool> {
     Ok(track_docs || show_recent || show_frequent)
 }
 
-pub fn enable_recent() -> Result<()> {
+pub fn enable_recent() -> Result<(), RecentEnablerError> {
     let adv_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     let exp_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer";
 
-    utils::write_reg_dword(HKEY_CURRENT_USER, adv_path, "Start_TrackDocs", 1)?;
-    utils::write_reg_dword(HKEY_CURRENT_USER, exp_path, "ShowRecent", 1)?;
-    utils::write_reg_dword(HKEY_CURRENT_USER, exp_path, "ShowFrequent", 1)?;
+    utils::write_reg_dword(HKEY_CURRENT_USER, adv_path, "Start_TrackDocs", 1)
+        .map_err(|e| RecentEnablerError::RecentEnableFailed(e.to_string()))?;
+    utils::write_reg_dword(HKEY_CURRENT_USER, exp_path, "ShowRecent", 1)
+        .map_err(|e| RecentEnablerError::RecentEnableFailed(e.to_string()))?;
+    utils::write_reg_dword(HKEY_CURRENT_USER, exp_path, "ShowFrequent", 1)
+        .map_err(|e| RecentEnablerError::RecentEnableFailed(e.to_string()))?;
 
     Ok(())
 }

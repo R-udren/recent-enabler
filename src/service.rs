@@ -1,9 +1,9 @@
-use crate::{recent, status, sysmain, system_restore, utils};
+use crate::{error::RecentEnablerError, recent, status, sysmain, system_restore, utils};
 
-pub async fn check_recent() -> std::result::Result<status::RecentStatus, String> {
-    let path = recent::get_recent_folder().map_err(|e| e.to_string())?;
-    let is_disabled = recent::is_recent_disabled().map_err(|e| e.to_string())?;
-    let info = recent::get_recent_info().map_err(|e| e.to_string())?;
+pub async fn check_recent() -> Result<status::RecentStatus, RecentEnablerError> {
+    let path = recent::get_recent_folder()?;
+    let is_disabled = recent::is_recent_disabled()?;
+    let info = recent::get_recent_info()?;
 
     Ok(status::RecentStatus {
         path: path.display().to_string(),
@@ -14,10 +14,10 @@ pub async fn check_recent() -> std::result::Result<status::RecentStatus, String>
     })
 }
 
-pub async fn check_sysmain() -> std::result::Result<status::SysMainStatus, String> {
-    let service_status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
-    let startup_type = sysmain::get_sysmain_startup_type().map_err(|e| e.to_string())?;
-    let prefetch_path = sysmain::get_prefetch_folder().map_err(|e| e.to_string())?;
+pub async fn check_sysmain() -> Result<status::SysMainStatus, RecentEnablerError> {
+    let service_status = sysmain::get_sysmain_status()?;
+    let startup_type = sysmain::get_sysmain_startup_type()?;
+    let prefetch_path = sysmain::get_prefetch_folder()?;
 
     let (prefetch_count, oldest_time, newest_time, prefetch_error) = match sysmain::get_prefetch_info() {
         Ok(info) => (info.pf_count, info.oldest_time, info.newest_time, None),
@@ -36,40 +36,45 @@ pub async fn check_sysmain() -> std::result::Result<status::SysMainStatus, Strin
     })
 }
 
-pub async fn check_system_restore() -> std::result::Result<status::SystemRestoreStatus, String> {
-    let is_enabled = system_restore::get_system_restore_info().map_err(|e| e.to_string())?;
+pub async fn check_system_restore() -> Result<status::SystemRestoreStatus, RecentEnablerError> {
+    let is_enabled = system_restore::get_system_restore_info()?;
     Ok(status::SystemRestoreStatus { is_enabled })
 }
 
-pub async fn enable_recent() -> std::result::Result<String, String> {
-    if !recent::is_recent_disabled().map_err(|e| e.to_string())? {
-        return Ok("Запись в Recent уже включена!".to_string());
+pub async fn enable_recent() -> Result<(), RecentEnablerError> {
+    if !recent::is_recent_disabled()? {
+        return Err(RecentEnablerError::RecentAlreadyEnabled);
     }
-    recent::enable_recent().map_err(|e| e.to_string())?;
-    Ok("Запись в Recent успешно включена!".to_string())
+    recent::enable_recent()?;
+    Ok(())
 }
 
-pub async fn enable_sysmain() -> std::result::Result<String, String> {
+pub async fn enable_sysmain() -> Result<(), RecentEnablerError> {
     if !utils::is_admin() {
-        return Err("Требуются права администратора для включения службы Prefetch!".to_string());
+        return Err(RecentEnablerError::SysMainRequiresAdmin);
     }
 
-    let status = sysmain::get_sysmain_status().map_err(|e| e.to_string())?;
-    let startup = sysmain::get_sysmain_startup_type().map_err(|e| e.to_string())?;
+    let status = sysmain::get_sysmain_status()?;
+    let startup = sysmain::get_sysmain_startup_type()?;
 
     if status == sysmain::ServiceStatus::Running && startup == sysmain::StartupType::Automatic {
-        return Ok("Служба Prefetch уже включена и запущена!".to_string());
+        return Err(RecentEnablerError::SysMainAlreadyEnabled);
     }
 
-    sysmain::enable_sysmain().map_err(|e| e.to_string())?;
-    Ok("Служба Prefetch успешно включена и запущена!".to_string())
+    sysmain::enable_sysmain()?;
+    Ok(())
 }
 
-pub async fn enable_system_restore() -> std::result::Result<String, String> {
+pub async fn enable_system_restore() -> Result<(), RecentEnablerError> {
     if !utils::is_admin() {
-        return Err("Требуются права администратора для включения System Restore!".to_string());
+        return Err(RecentEnablerError::SystemRestoreRequiresAdmin);
     }
 
-    system_restore::enable_system_restore().map_err(|e| e.to_string())?;
-    Ok("System Restore успешно включена на диске C:!".to_string())
+    let is_enabled = system_restore::get_system_restore_info()?;
+    if is_enabled {
+        return Err(RecentEnablerError::SystemRestoreAlreadyEnabled);
+    }
+
+    system_restore::enable_system_restore()?;
+    Ok(())
 }

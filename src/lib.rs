@@ -1,3 +1,4 @@
+pub mod error;
 pub mod recent;
 pub mod service;
 pub mod status;
@@ -14,6 +15,8 @@ pub use crate::service::{
 
 pub use crate::status::{RecentStatus, SysMainStatus, SystemRestoreStatus};
 
+pub use crate::error::{RecentEnablerError, Result};
+
 pub use crate::utils::is_admin;
 
 pub mod prelude {
@@ -22,5 +25,6 @@ pub mod prelude {
         enable_system_restore,
     };
     pub use crate::status::{RecentStatus, SysMainStatus, SystemRestoreStatus};
+    pub use crate::error::{RecentEnablerError, Result};
     pub use crate::utils::is_admin;
 }

@@ -2325,6 +2325,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "iced",
+ "thiserror 2.0.17",
  "tokio",
  "windows 0.62.2",
  "winreg",

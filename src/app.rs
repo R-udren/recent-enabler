@@ -1,7 +1,7 @@
 use crate::ui;
 use iced::widget::{button, column, container, row, scrollable, space, text};
 use iced::{Element, Fill, Task};
-use recent_enabler::{service, status, utils};
+use recent_enabler::{service, status, utils, RecentEnablerError};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -9,12 +9,12 @@ pub enum Message {
     EnableSysMain,
     EnableSystemRestore,
     Refresh,
-    RecentChecked(Result<status::RecentStatus, String>),
-    SysMainChecked(Result<status::SysMainStatus, String>),
-    SystemRestoreChecked(Result<status::SystemRestoreStatus, String>),
-    RecentEnabled(Result<String, String>),
-    SysMainEnabled(Result<String, String>),
-    SystemRestoreEnabled(Result<String, String>),
+    RecentChecked(Result<status::RecentStatus, RecentEnablerError>),
+    SysMainChecked(Result<status::SysMainStatus, RecentEnablerError>),
+    SystemRestoreChecked(Result<status::SystemRestoreStatus, RecentEnablerError>),
+    RecentEnabled(Result<(), RecentEnablerError>),
+    SysMainEnabled(Result<(), RecentEnablerError>),
+    SystemRestoreEnabled(Result<(), RecentEnablerError>),
     OpenRecentFolder,
     OpenPrefetchFolder,
     RestartAsAdmin,
@@ -74,7 +74,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.recent_status = Some(status);
                     state.status_message.clear();
                 }
-                Err(e) => state.status_message = format!("Ошибка Recent: {}", e),
+                Err(e) => state.status_message = format!("Ошибка Recent: {}", e.to_russian()),
             }
             Task::none()
         }
@@ -84,7 +84,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.sysmain_status = Some(status);
                     state.status_message.clear();
                 }
-                Err(e) => state.status_message = format!("Ошибка Prefetch: {}", e),
+                Err(e) => state.status_message = format!("Ошибка Prefetch: {}", e.to_russian()),
             }
             Task::none()
         }
@@ -94,43 +94,45 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
                     state.system_restore_status = Some(status);
                     state.status_message.clear();
                 }
-                Err(e) => state.status_message = format!("Ошибка System Restore: {}", e),
+                Err(e) => {
+                    state.status_message = format!("Ошибка System Restore: {}", e.to_russian())
+                }
             }
             Task::none()
         }
         Message::RecentEnabled(result) => match result {
-            Ok(msg) => {
-                state.status_message = msg;
+            Ok(()) => {
+                state.status_message = "Запись в Recent успешно включена!".to_string();
                 Task::perform(service::check_recent(), Message::RecentChecked)
             }
             Err(e) => {
-                state.status_message = format!("Ошибка: {}", e);
+                state.status_message = e.to_russian();
                 Task::none()
             }
         },
         Message::SysMainEnabled(result) => match result {
-            Ok(msg) => {
-                state.status_message = msg;
+            Ok(()) => {
+                state.status_message = "Служба Prefetch успешно включена и запущена!".to_string();
                 Task::batch(vec![
                     Task::perform(service::check_recent(), Message::RecentChecked),
                     Task::perform(service::check_sysmain(), Message::SysMainChecked),
                 ])
             }
             Err(e) => {
-                state.status_message = format!("Ошибка: {}", e);
+                state.status_message = e.to_russian();
                 Task::none()
             }
         },
         Message::SystemRestoreEnabled(result) => match result {
-            Ok(msg) => {
-                state.status_message = msg;
+            Ok(()) => {
+                state.status_message = "System Restore успешно включена на диске C:!".to_string();
                 Task::perform(
                     service::check_system_restore(),
                     Message::SystemRestoreChecked,
                 )
             }
             Err(e) => {
-                state.status_message = format!("Ошибка: {}", e);
+                state.status_message = e.to_russian();
                 Task::none()
             }
         },
