@@ -1,7 +1,7 @@
-use crate::{service, ui, utils};
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use crate::ui;
+use iced::widget::{button, column, container, row, scrollable, space, text};
 use iced::{Element, Fill, Task};
-use std::time::SystemTime;
+use recent_enabler::{service, status, utils};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -9,9 +9,9 @@ pub enum Message {
     EnableSysMain,
     EnableSystemRestore,
     Refresh,
-    RecentChecked(Result<RecentStatus, String>),
-    SysMainChecked(Result<SysMainStatus, String>),
-    SystemRestoreChecked(Result<SystemRestoreStatus, String>),
+    RecentChecked(Result<status::RecentStatus, String>),
+    SysMainChecked(Result<status::SysMainStatus, String>),
+    SystemRestoreChecked(Result<status::SystemRestoreStatus, String>),
     RecentEnabled(Result<String, String>),
     SysMainEnabled(Result<String, String>),
     SystemRestoreEnabled(Result<String, String>),
@@ -20,37 +20,11 @@ pub enum Message {
     RestartAsAdmin,
 }
 
-#[derive(Debug, Clone)]
-pub struct RecentStatus {
-    pub path: String,
-    pub is_disabled: bool,
-    pub files_count: usize,
-    pub oldest_time: Option<SystemTime>,
-    pub newest_time: Option<SystemTime>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SysMainStatus {
-    pub is_running: bool,
-    pub is_auto: bool,
-    pub startup_type: String,
-    pub prefetch_path: String,
-    pub prefetch_count: usize,
-    pub oldest_time: Option<SystemTime>,
-    pub newest_time: Option<SystemTime>,
-    pub prefetch_error: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SystemRestoreStatus {
-    pub is_enabled: bool,
-}
-
 #[derive(Default)]
 pub struct State {
-    pub recent_status: Option<RecentStatus>,
-    pub sysmain_status: Option<SysMainStatus>,
-    pub system_restore_status: Option<SystemRestoreStatus>,
+    pub recent_status: Option<status::RecentStatus>,
+    pub sysmain_status: Option<status::SysMainStatus>,
+    pub system_restore_status: Option<status::SystemRestoreStatus>,
     pub status_message: String,
     pub is_admin: bool,
 }
@@ -206,14 +180,14 @@ pub fn view(state: &State) -> Element<'_, Message> {
     }
 
     content = content
-        .push(Space::with_height(15))
+        .push(space().height(15))
         .push(view_recent_card(state.recent_status.as_ref()))
-        .push(Space::with_height(15))
+        .push(space().height(15))
         .push(view_sysmain_card(
             state.sysmain_status.as_ref(),
             state.is_admin,
         ))
-        .push(Space::with_height(15))
+        .push(space().height(15))
         .push(view_system_restore_card(
             state.system_restore_status.as_ref(),
             state.is_admin,
@@ -230,7 +204,7 @@ fn view_header() -> Element<'static, Message> {
         text("Recent & Prefetch Manager")
             .size(26)
             .color(iced::Color::from_rgb(0.9, 0.9, 1.0)),
-        Space::with_width(Fill),
+        space().width(Fill),
         button("Обновить")
             .on_press(Message::Refresh)
             .padding([8, 16]),
@@ -284,7 +258,7 @@ fn view_status_message(msg: &str) -> Element<'_, Message> {
         .into()
 }
 
-fn view_recent_card(status: Option<&RecentStatus>) -> Element<'_, Message> {
+fn view_recent_card(status: Option<&status::RecentStatus>) -> Element<'_, Message> {
     let Some(status) = status else {
         return container(text("Загрузка статуса Recent...").size(16).width(Fill))
             .padding(20)
@@ -318,7 +292,7 @@ fn view_recent_card(status: Option<&RecentStatus>) -> Element<'_, Message> {
     .padding(22);
 
     if status.is_disabled {
-        content = content.push(Space::with_height(15)).push(
+        content = content.push(space().height(15)).push(
             container(
                 button("Включить запись Recent")
                     .on_press(Message::EnableRecent)
@@ -339,7 +313,10 @@ fn view_recent_card(status: Option<&RecentStatus>) -> Element<'_, Message> {
         .into()
 }
 
-fn view_sysmain_card(status: Option<&SysMainStatus>, is_admin: bool) -> Element<'_, Message> {
+fn view_sysmain_card(
+    status: Option<&status::SysMainStatus>,
+    is_admin: bool,
+) -> Element<'_, Message> {
     let Some(status) = status else {
         return container(text("Загрузка статуса Prefetch...").size(16).width(Fill))
             .padding(20)
@@ -403,7 +380,7 @@ fn view_sysmain_card(status: Option<&SysMainStatus>, is_admin: bool) -> Element<
     ));
 
     if !status.is_running || !status.is_auto {
-        content = content.push(Space::with_height(15)).push(if is_admin {
+        content = content.push(space().height(15)).push(if is_admin {
             container(
                 button("Включить службу Prefetch")
                     .on_press(Message::EnableSysMain)
@@ -427,7 +404,7 @@ fn view_sysmain_card(status: Option<&SysMainStatus>, is_admin: bool) -> Element<
 }
 
 fn view_system_restore_card(
-    status: Option<&SystemRestoreStatus>,
+    status: Option<&status::SystemRestoreStatus>,
     is_admin: bool,
 ) -> Element<'_, Message> {
     let Some(status) = status else {
@@ -461,7 +438,7 @@ fn view_system_restore_card(
 
     // Show enable button or admin warning if not enabled
     if !status.is_enabled {
-        content = content.push(Space::with_height(15));
+        content = content.push(space().height(15));
 
         if is_admin {
             content = content.push(

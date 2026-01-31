@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{button, column, container, row, space, text};
 use iced::{Color, Element, Fill};
 use std::time::SystemTime;
 
@@ -59,7 +59,7 @@ pub fn info_row<'a, M: 'a>(
 pub fn card_header<'a, M: Clone + 'a>(title: &'a str, on_open: M) -> iced::widget::Row<'a, M> {
     row![
         text(title).size(22),
-        Space::with_width(Fill),
+        space().width(Fill),
         button("Открыть папку").on_press(on_open).padding([6, 12]),
     ]
     .align_y(iced::Alignment::Center)
