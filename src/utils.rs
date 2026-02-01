@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use crate::error::{RecentEnablerError, Result};
 use std::path::Path;
 use std::time::SystemTime;
 use winreg::{RegKey, HKEY};
@@ -65,8 +65,9 @@ pub fn get_directory_stats(path: &Path, extension: &str) -> Result<DirectoryStat
         });
     }
 
-    let entries = std::fs::read_dir(path)
-        .with_context(|| format!("Failed to read directory: {}", path.display()))?;
+    let entries = std::fs::read_dir(path).map_err(|e| {
+        RecentEnablerError::DirectoryReadFailed(format!("{}: {}", path.display(), e))
+    })?;
 
     let mut count = 0;
     let mut oldest: Option<SystemTime> = None;
@@ -111,8 +112,8 @@ pub fn read_reg_dword(hkey: HKEY, path: &str, value: &str) -> Option<u32> {
 pub fn write_reg_dword(hkey: HKEY, path: &str, value_name: &str, value: u32) -> Result<()> {
     let (key, _) = RegKey::predef(hkey)
         .create_subkey(path)
-        .with_context(|| format!("Failed to open/create registry key: {path}"))?;
+        .map_err(|e| RecentEnablerError::RegistryWriteFailed(format!("{}: {}", path, e)))?;
 
     key.set_value(value_name, &value)
-        .with_context(|| format!("Failed to set registry value: {value_name}"))
+        .map_err(|e| RecentEnablerError::RegistryWriteFailed(format!("{}: {}", value_name, e)))
 }

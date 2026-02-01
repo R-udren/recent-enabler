@@ -20,11 +20,11 @@ pub use crate::error::{RecentEnablerError, Result};
 pub use crate::utils::is_admin;
 
 pub mod prelude {
+    pub use crate::error::{RecentEnablerError, Result};
     pub use crate::service::{
         check_recent, check_sysmain, check_system_restore, enable_recent, enable_sysmain,
         enable_system_restore,
     };
     pub use crate::status::{RecentStatus, SysMainStatus, SystemRestoreStatus};
-    pub use crate::error::{RecentEnablerError, Result};
     pub use crate::utils::is_admin;
 }

@@ -42,10 +42,10 @@ pub fn init() -> (State, Task<Message>) {
     (
         State::new(),
         Task::batch(vec![
-            Task::perform(service::check_recent(), Message::RecentChecked),
-            Task::perform(service::check_sysmain(), Message::SysMainChecked),
+            Task::perform(async { service::check_recent() }, Message::RecentChecked),
+            Task::perform(async { service::check_sysmain() }, Message::SysMainChecked),
             Task::perform(
-                service::check_system_restore(),
+                async { service::check_system_restore() },
                 Message::SystemRestoreChecked,
             ),
         ]),
@@ -56,17 +56,21 @@ pub fn init() -> (State, Task<Message>) {
 pub fn update(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::Refresh => Task::batch(vec![
-            Task::perform(service::check_recent(), Message::RecentChecked),
-            Task::perform(service::check_sysmain(), Message::SysMainChecked),
+            Task::perform(async { service::check_recent() }, Message::RecentChecked),
+            Task::perform(async { service::check_sysmain() }, Message::SysMainChecked),
             Task::perform(
-                service::check_system_restore(),
+                async { service::check_system_restore() },
                 Message::SystemRestoreChecked,
             ),
         ]),
-        Message::EnableRecent => Task::perform(service::enable_recent(), Message::RecentEnabled),
-        Message::EnableSysMain => Task::perform(service::enable_sysmain(), Message::SysMainEnabled),
+        Message::EnableRecent => {
+            Task::perform(async { service::enable_recent() }, Message::RecentEnabled)
+        }
+        Message::EnableSysMain => {
+            Task::perform(async { service::enable_sysmain() }, Message::SysMainEnabled)
+        }
         Message::EnableSystemRestore => Task::perform(
-            service::enable_system_restore(),
+            async { service::enable_system_restore() },
             Message::SystemRestoreEnabled,
         ),
         Message::RecentChecked(result) => {
@@ -104,7 +108,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::RecentEnabled(result) => match result {
             Ok(()) => {
                 state.status_message = "Запись в Recent успешно включена!".to_string();
-                Task::perform(service::check_recent(), Message::RecentChecked)
+                Task::perform(async { service::check_recent() }, Message::RecentChecked)
             }
             Err(e) => {
                 state.status_message = e.to_russian();
@@ -115,8 +119,8 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             Ok(()) => {
                 state.status_message = "Служба Prefetch успешно включена и запущена!".to_string();
                 Task::batch(vec![
-                    Task::perform(service::check_recent(), Message::RecentChecked),
-                    Task::perform(service::check_sysmain(), Message::SysMainChecked),
+                    Task::perform(async { service::check_recent() }, Message::RecentChecked),
+                    Task::perform(async { service::check_sysmain() }, Message::SysMainChecked),
                 ])
             }
             Err(e) => {
@@ -128,7 +132,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             Ok(()) => {
                 state.status_message = "System Restore успешно включена на диске C:!".to_string();
                 Task::perform(
-                    service::check_system_restore(),
+                    async { service::check_system_restore() },
                     Message::SystemRestoreChecked,
                 )
             }

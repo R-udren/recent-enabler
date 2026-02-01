@@ -8,7 +8,7 @@ use crate::{
 /// # Errors
 ///
 /// Returns error if Recent folder cannot be accessed or read
-pub async fn check_recent() -> Result<status::RecentStatus> {
+pub fn check_recent() -> Result<status::RecentStatus> {
     let path = recent::get_recent_folder()?;
     let is_disabled = recent::is_recent_disabled()?;
     let info = recent::get_recent_info()?;
@@ -27,15 +27,16 @@ pub async fn check_recent() -> Result<status::RecentStatus> {
 /// # Errors
 ///
 /// Returns error if service or Prefetch folder cannot be queried
-pub async fn check_sysmain() -> Result<status::SysMainStatus> {
+pub fn check_sysmain() -> Result<status::SysMainStatus> {
     let service_status = sysmain::get_sysmain_status()?;
     let startup_type = sysmain::get_sysmain_startup_type()?;
     let prefetch_path = sysmain::get_prefetch_folder()?;
 
-    let (prefetch_count, oldest_time, newest_time, prefetch_error) = match sysmain::get_prefetch_info() {
-        Ok(info) => (info.pf_count, info.oldest_time, info.newest_time, None),
-        Err(e) => (0, None, None, Some(e.to_russian())),
-    };
+    let (prefetch_count, oldest_time, newest_time, prefetch_error) =
+        match sysmain::get_prefetch_info() {
+            Ok(info) => (info.pf_count, info.oldest_time, info.newest_time, None),
+            Err(e) => (0, None, None, Some(e.to_russian())),
+        };
 
     Ok(status::SysMainStatus {
         is_running: service_status == sysmain::ServiceStatus::Running,
@@ -54,7 +55,7 @@ pub async fn check_sysmain() -> Result<status::SysMainStatus> {
 /// # Errors
 ///
 /// Returns error if System Restore status cannot be queried
-pub async fn check_system_restore() -> Result<status::SystemRestoreStatus> {
+pub fn check_system_restore() -> Result<status::SystemRestoreStatus> {
     let is_enabled = system_restore::get_system_restore_info()?;
     Ok(status::SystemRestoreStatus { is_enabled })
 }
@@ -64,7 +65,7 @@ pub async fn check_system_restore() -> Result<status::SystemRestoreStatus> {
 /// # Errors
 ///
 /// Returns error if Recent is already enabled or registry cannot be written
-pub async fn enable_recent() -> Result {
+pub fn enable_recent() -> Result {
     if !recent::is_recent_disabled()? {
         return Err(RecentEnablerError::RecentAlreadyEnabled);
     }
@@ -77,7 +78,7 @@ pub async fn enable_recent() -> Result {
 /// # Errors
 ///
 /// Returns error if not admin, already enabled, or service cannot be started
-pub async fn enable_sysmain() -> Result {
+pub fn enable_sysmain() -> Result {
     if !utils::is_admin() {
         return Err(RecentEnablerError::SysMainRequiresAdmin);
     }
@@ -98,7 +99,7 @@ pub async fn enable_sysmain() -> Result {
 /// # Errors
 ///
 /// Returns error if not admin, already enabled, or `PowerShell` command fails
-pub async fn enable_system_restore() -> Result {
+pub fn enable_system_restore() -> Result {
     if !utils::is_admin() {
         return Err(RecentEnablerError::SystemRestoreRequiresAdmin);
     }
