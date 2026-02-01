@@ -45,6 +45,53 @@ pub fn is_admin() -> bool {
     }
 }
 
+/// Restart the current application with administrator privileges
+///
+/// This function spawns a new instance of the application with elevated privileges
+/// using PowerShell's Start-Process with the RunAs verb, then exits the current process.
+///
+/// # Errors
+///
+/// Returns error if the current executable path cannot be determined or if PowerShell
+/// fails to spawn the elevated process.
+///
+/// # Platform Support
+///
+/// This function only works on Windows. On other platforms, it returns an error.
+pub fn restart_as_admin() -> Result<()> {
+    #[cfg(windows)]
+    {
+        let exe_path = std::env::current_exe().map_err(|e| {
+            RecentEnablerError::WindowsPathNotFound(format!("Failed to get executable path: {}", e))
+        })?;
+
+        std::process::Command::new("powershell")
+            .args([
+                "-Command",
+                &format!(
+                    "Start-Process -FilePath '{}' -Verb RunAs",
+                    exe_path.display()
+                ),
+            ])
+            .spawn()
+            .map_err(|e| {
+                RecentEnablerError::SystemRestoreEnableFailed(format!(
+                    "Failed to restart as admin: {}",
+                    e
+                ))
+            })?;
+
+        std::process::exit(0);
+    }
+
+    #[cfg(not(windows))]
+    {
+        Err(RecentEnablerError::WindowsPathNotFound(
+            "Restart as admin is only supported on Windows".to_string(),
+        ))
+    }
+}
+
 pub struct DirectoryStats {
     pub count: usize,
     pub oldest: Option<SystemTime>,

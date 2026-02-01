@@ -158,18 +158,7 @@ pub fn update(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::RestartAsAdmin => {
-            if let Ok(exe_path) = std::env::current_exe() {
-                let _ = std::process::Command::new("powershell")
-                    .args([
-                        "-Command",
-                        &format!(
-                            "Start-Process -FilePath '{}' -Verb RunAs",
-                            exe_path.display()
-                        ),
-                    ])
-                    .spawn();
-                std::process::exit(0);
-            }
+            let _ = utils::restart_as_admin();
             Task::none()
         }
     }
