@@ -34,7 +34,7 @@ pub async fn check_sysmain() -> Result<status::SysMainStatus> {
 
     let (prefetch_count, oldest_time, newest_time, prefetch_error) = match sysmain::get_prefetch_info() {
         Ok(info) => (info.pf_count, info.oldest_time, info.newest_time, None),
-        Err(e) => (0, None, None, Some(e.to_string())),
+        Err(e) => (0, None, None, Some(e.to_russian())),
     };
 
     Ok(status::SysMainStatus {
