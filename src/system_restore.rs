@@ -21,18 +21,29 @@ pub fn is_system_restore_enabled() -> Result<bool> {
 ///
 /// Returns error if `PowerShell` command fails
 pub fn enable_system_restore() -> Result {
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Enable-ComputerRestore -Drive 'C:'",
-        ])
-        .output()
-        .map_err(|e| {
-            RecentEnablerError::SystemRestoreEnableFailed(format!(
-                "Failed to execute PowerShell command: {e}"
-            ))
-        })?;
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+
+    #[cfg(windows)]
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
+        "-Command",
+        "Enable-ComputerRestore -Drive 'C:'",
+    ]);
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd.output().map_err(|e| {
+        RecentEnablerError::SystemRestoreEnableFailed(format!(
+            "Failed to execute PowerShell command: {e}"
+        ))
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

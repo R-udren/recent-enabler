@@ -61,25 +61,31 @@ pub fn is_admin() -> bool {
 pub fn restart_as_admin() -> Result<()> {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
         let exe_path = std::env::current_exe().map_err(|e| {
             RecentEnablerError::WindowsPathNotFound(format!("Failed to get executable path: {}", e))
         })?;
 
-        std::process::Command::new("powershell")
-            .args([
-                "-Command",
-                &format!(
-                    "Start-Process -FilePath '{}' -Verb RunAs",
-                    exe_path.display()
-                ),
-            ])
-            .spawn()
-            .map_err(|e| {
-                RecentEnablerError::SystemRestoreEnableFailed(format!(
-                    "Failed to restart as admin: {}",
-                    e
-                ))
-            })?;
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args([
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &format!(
+                "Start-Process -FilePath '{}' -Verb RunAs",
+                exe_path.display()
+            ),
+        ])
+        .creation_flags(CREATE_NO_WINDOW);
+
+        cmd.spawn().map_err(|e| {
+            RecentEnablerError::SystemRestoreEnableFailed(format!(
+                "Failed to restart as admin: {}",
+                e
+            ))
+        })?;
 
         std::process::exit(0);
     }
